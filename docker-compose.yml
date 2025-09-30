@@ -1,0 +1,10 @@
+services:
+  catalog-service:
+    build:
+      context: ./services/catalog-service
+      dockerfile: CatalogService/Dockerfile
+    ports:
+      - "5179:8080"   # http
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+

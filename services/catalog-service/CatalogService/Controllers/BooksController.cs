@@ -10,7 +10,8 @@ namespace CatalogService.Controllers
         private static readonly List<Book> Books = new()
         {
             new Book { Id = 1, Title = "Clean Code", Author = "Robert C. Martin", Price = 29.99M },
-            new Book { Id = 2, Title = "The Pragmatic Programmer", Author = "Andy Hunt", Price = 34.99M }
+            new Book { Id = 2, Title = "The Pragmatic Programmer", Author = "Andy Hunt", Price = 34.99M },
+            new Book { Id = 3, Title = "Design Patterns", Author = "Erich Gamma", Price = 39.99M }
         };
 
         [HttpGet]

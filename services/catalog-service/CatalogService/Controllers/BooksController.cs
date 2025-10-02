@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using CatalogService.Models;
 
@@ -14,13 +15,20 @@ namespace CatalogService.Controllers
             new Book { Id = 3, Title = "Design Patterns", Author = "Erich Gamma", Price = 39.99M }
         };
 
+        // Public endpoint for health check
+        [HttpGet("public")]
+        [AllowAnonymous]
+        public IActionResult Public() => Ok("Public OK");
+
         [HttpGet]
+        [Authorize]
         public ActionResult<IEnumerable<Book>> GetAll()
         {
             return Ok(Books);
         }
 
         [HttpGet("{id}")]
+        [Authorize]
         public ActionResult<Book> GetBook(int id)
         {
             var book = Books.FirstOrDefault(b => b.Id == id);
@@ -30,6 +38,7 @@ namespace CatalogService.Controllers
 
         // POST: api/books
         [HttpPost]
+        [Authorize]
         public ActionResult<Book> CreateBook(Book newBook)
         {
             if (Books.Any(b => b.Id == newBook.Id))
@@ -41,6 +50,7 @@ namespace CatalogService.Controllers
 
         // PUT: api/books/1
         [HttpPut("{id}")]
+        [Authorize]
         public ActionResult UpdateBook(int id, Book updatedBook)
         {
             var book = Books.FirstOrDefault(b => b.Id == id);
@@ -55,6 +65,7 @@ namespace CatalogService.Controllers
 
         // DELETE: api/books/1
         [HttpDelete("{id}")]
+        [Authorize]
         public ActionResult DeleteBook(int id)
         {
             var book = Books.FirstOrDefault(b => b.Id == id);

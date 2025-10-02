@@ -24,23 +24,16 @@ builder.Services.AddCors(options =>
 // JWT settings from configuration (env overrides appsettings)
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
-var jwtSecret = builder.Configuration["Jwt:Secret"];
-
-byte[] signingKeyBytes;
-try
-{
-    signingKeyBytes = Convert.FromBase64String(jwtSecret ?? string.Empty);
-}
-catch (FormatException)
-{
-    signingKeyBytes = Encoding.UTF8.GetBytes(jwtSecret ?? string.Empty);
-}
+var jwtSecret = builder.Configuration["Jwt:Secret"]; // only for HS256
+var jwtValidationMode = builder.Configuration["Jwt:ValidationMode"] ?? "HS256"; // HS256 or RS256
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false; // dev only
+        options.SaveToken = true;
+        options.IncludeErrorDetails = true;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -49,12 +42,39 @@ builder.Services
             ValidateAudience = true,
             ValidAudience = jwtAudience,
 
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes),
-
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(30)
+            ClockSkew = TimeSpan.FromSeconds(30),
+            ValidateIssuerSigningKey = true
         };
+
+        if (string.Equals(jwtValidationMode, "RS256", StringComparison.OrdinalIgnoreCase))
+        {
+            // Supabase JWKS endpoint
+            var jwksUri = $"{jwtIssuer?.TrimEnd('/')}/.well-known/jwks.json";
+            options.RequireHttpsMetadata = true;
+            options.TokenValidationParameters.IssuerSigningKeyResolver = (token, securityToken, kid, parameters) =>
+            {
+                using var http = new HttpClient();
+                var jwksJson = http.GetStringAsync(jwksUri).GetAwaiter().GetResult();
+                var jwks = new JsonWebKeySet(jwksJson);
+                return jwks.GetSigningKeys();
+            };
+        }
+        else
+        {
+            // HS256 with shared secret
+            options.RequireHttpsMetadata = false; // dev only
+            byte[] signingKeyBytes;
+            try
+            {
+                signingKeyBytes = Convert.FromBase64String(jwtSecret ?? string.Empty);
+            }
+            catch (FormatException)
+            {
+                signingKeyBytes = Encoding.UTF8.GetBytes(jwtSecret ?? string.Empty);
+            }
+            options.TokenValidationParameters.IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes);
+        }
 
         options.Events = new JwtBearerEvents
         {
@@ -68,6 +88,12 @@ builder.Services
             {
                 var log = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
                 log.LogInformation("JWT validated for sub: {sub}", ctx.Principal?.FindFirst("sub")?.Value);
+                return Task.CompletedTask;
+            },
+            OnChallenge = ctx =>
+            {
+                var log = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                log.LogWarning("JWT challenge: error={error} desc={desc}", ctx.Error, ctx.ErrorDescription);
                 return Task.CompletedTask;
             }
         };

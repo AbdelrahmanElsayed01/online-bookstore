@@ -34,3 +34,11 @@
 /Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/obj/Debug/net8.0/CatalogService.pdb
 /Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/obj/Debug/net8.0/CatalogService.genruntimeconfig.cache
 /Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/obj/Debug/net8.0/ref/CatalogService.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/Microsoft.AspNetCore.Authentication.JwtBearer.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/Microsoft.IdentityModel.Abstractions.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/Microsoft.IdentityModel.JsonWebTokens.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/Microsoft.IdentityModel.Logging.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/Microsoft.IdentityModel.Protocols.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/Microsoft.IdentityModel.Tokens.dll
+/Users/abdelrahmanelsayed/online-bookstore/services/catalog-service/CatalogService/bin/Debug/net8.0/System.IdentityModel.Tokens.Jwt.dll

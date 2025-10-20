@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OrderService.Models;
 using System.Net.Http.Json;
@@ -18,34 +19,51 @@ namespace OrderService.Controllers
         }
 
         [HttpGet]
+        [Authorize]
         public IActionResult GetAllOrders() => Ok(_orders);
 
         [HttpGet("{id}")]
+        [Authorize]
         public IActionResult GetOrder(int id)
         {
             var order = _orders.FirstOrDefault(o => o.Id == id);
             return order == null ? NotFound() : Ok(order);
         }
 
-[HttpPost]
-public async Task<IActionResult> CreateOrder([FromBody] Order order)
-{
-    // Call catalog-service
-    var response = await _httpClient.GetAsync($"api/books/{order.BookId}");
+        [HttpPost]
+        [Authorize]
+        public async Task<IActionResult> CreateOrder([FromBody] Order order)
+        {
+            // Forward the JWT token to the CatalogService
+            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+            if (authHeader != null)
+            {
+                _httpClient.DefaultRequestHeaders.Authorization = 
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", 
+                        authHeader.Substring("Bearer ".Length));
+            }
 
-    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-    {
-        return BadRequest($"Book with id {order.BookId} not found in CatalogService.");
-    }
+            // Call catalog-service
+            var response = await _httpClient.GetAsync($"api/books/{order.BookId}");
 
-    response.EnsureSuccessStatusCode();
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return BadRequest($"Book with id {order.BookId} not found in CatalogService.");
+            }
 
-    var book = await response.Content.ReadFromJsonAsync<Book>();
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                return Unauthorized("Unauthorized to access CatalogService.");
+            }
 
-    order.Id = _nextId++;
-    _orders.Add(order);
+            response.EnsureSuccessStatusCode();
 
-    return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
-}
+            var book = await response.Content.ReadFromJsonAsync<Book>();
+
+            order.Id = _nextId++;
+            _orders.Add(order);
+
+            return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
+        }
     }
 }

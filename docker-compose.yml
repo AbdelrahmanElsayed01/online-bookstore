@@ -7,6 +7,10 @@ services:
       - "5179:8080"   # http
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - Jwt__Issuer=https://cyecesagvggsxmrfryse.supabase.co/auth/v1
+      - Jwt__Audience=authenticated
+      - Jwt__Secret=b1VUEuyvOSrGwBzozpTdhO10Syy7uakqYBQEFRkwPjMMdAlCRMqQdM9jFHpImznJH46a4JV7ILE9r9TQUOXRsA==
 
   order-service:
     build:
@@ -16,3 +20,7 @@ services:
       - "5180:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - Jwt__Issuer=https://cyecesagvggsxmrfryse.supabase.co/auth/v1
+      - Jwt__Audience=authenticated
+      - Jwt__Secret=b1VUEuyvOSrGwBzozpTdhO10Syy7uakqYBQEFRkwPjMMdAlCRMqQdM9jFHpImznJH46a4JV7ILE9r9TQUOXRsA==

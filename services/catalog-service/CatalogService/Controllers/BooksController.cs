@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using CatalogService.Models;
 
 namespace CatalogService.Controllers
@@ -14,23 +16,32 @@ namespace CatalogService.Controllers
             new Book { Id = 3, Title = "Design Patterns", Author = "Erich Gamma", Price = 39.99M }
         };
 
+        // Public: no authentication required
+        [HttpGet("public")]
+        public IActionResult PublicEndpoint() =>
+            Ok("✅ Public endpoint, no authentication needed.");
+
+        // Protected: requires Supabase JWT
         [HttpGet]
-        public ActionResult<IEnumerable<Book>> GetAll()
+        [Authorize]
+        public IActionResult GetAll()
         {
-            return Ok(Books);
+            var userId = User.FindFirstValue("sub"); // Supabase user UUID
+            return Ok(new { userId, books = Books });
         }
 
         [HttpGet("{id}")]
-        public ActionResult<Book> GetBook(int id)
+        [Authorize]
+        public IActionResult GetBook(int id)
         {
             var book = Books.FirstOrDefault(b => b.Id == id);
             if (book == null) return NotFound();
             return Ok(book);
         }
 
-        // POST: api/books
         [HttpPost]
-        public ActionResult<Book> CreateBook(Book newBook)
+        [Authorize]
+        public IActionResult CreateBook(Book newBook)
         {
             if (Books.Any(b => b.Id == newBook.Id))
                 return Conflict("Book with this ID already exists.");
@@ -39,9 +50,9 @@ namespace CatalogService.Controllers
             return CreatedAtAction(nameof(GetBook), new { id = newBook.Id }, newBook);
         }
 
-        // PUT: api/books/1
         [HttpPut("{id}")]
-        public ActionResult UpdateBook(int id, Book updatedBook)
+        [Authorize]
+        public IActionResult UpdateBook(int id, Book updatedBook)
         {
             var book = Books.FirstOrDefault(b => b.Id == id);
             if (book == null) return NotFound();
@@ -53,9 +64,9 @@ namespace CatalogService.Controllers
             return NoContent();
         }
 
-        // DELETE: api/books/1
         [HttpDelete("{id}")]
-        public ActionResult DeleteBook(int id)
+        [Authorize]
+        public IActionResult DeleteBook(int id)
         {
             var book = Books.FirstOrDefault(b => b.Id == id);
             if (book == null) return NotFound();

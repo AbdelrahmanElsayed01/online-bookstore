@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: online-bookstore
+  labels:
+    app: order-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+      - name: order-service
+        image: ghcr.io/abdelrahmanelsayed/online-bookstore/order-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: JWT__Secret
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: JWT_SECRET
+        - name: JWT__Issuer
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: JWT_ISSUER
+        - name: JWT__Audience
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: JWT_AUDIENCE
+        envFrom:
+        - configMapRef:
+            name: bookstore-config
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: online-bookstore
+spec:
+  selector:
+    app: order-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP

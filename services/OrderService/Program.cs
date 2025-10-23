@@ -191,4 +191,13 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// Health check endpoint
+app.MapGet("/health", () => new
+{
+    Status = "Healthy",
+    Service = "Order Service",
+    Timestamp = DateTime.UtcNow,
+    Version = "1.0.0"
+});
+
 app.Run();

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bookstore-config
+  namespace: online-bookstore
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  DOTNET_RUNNING_IN_CONTAINER: "true"
+  NODE_ENV: "production"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bookstore-secrets
+  namespace: online-bookstore
+type: Opaque
+stringData:
+  JWT_SECRET: "your-jwt-secret-key"
+  JWT_ISSUER: "https://your-supabase-project.supabase.co/auth/v1"
+  JWT_AUDIENCE: "authenticated"
+  NEXT_PUBLIC_SUPABASE_URL: "https://your-supabase-project.supabase.co"
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: "your-supabase-anon-key"

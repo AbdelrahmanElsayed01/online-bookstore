@@ -8,7 +8,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: abdelrahmanelsayed/online-bookstore
 
 jobs:
   # Frontend Build and Test
@@ -121,7 +120,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image_suffix }}
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ matrix.image_suffix }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -192,8 +191,8 @@ jobs:
         echo "- Deploy to Docker Swarm: docker stack deploy -c docker-compose.prod.yml"
         echo "- Deploy to cloud provider (AWS/GCP/Azure)"
         echo "Current services to deploy:"
-        echo "- catalog-service: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/catalog-service:latest"
-        echo "- order-service: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/order-service:latest"
+        echo "- catalog-service: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/catalog-service:latest"
+        echo "- order-service: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/order-service:latest"
     
     - name: Health check
       run: |

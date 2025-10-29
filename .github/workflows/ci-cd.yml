@@ -203,10 +203,14 @@ jobs:
   # Security Scanning
   security-scan:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Run on PRs (same-repo) and on pushes to main/develop (avoids fork token limits)
+    if: >-
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
     permissions:
       security-events: write
       contents: read
+      actions: read
     
     steps:
     - name: Checkout code
@@ -222,6 +226,11 @@ jobs:
     
     - name: Upload Trivy scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      # Skip upload from forked PRs (insufficient token permissions)
+      if: >-
+        always() && (
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        )
       with:
         sarif_file: 'trivy-results.sarif'

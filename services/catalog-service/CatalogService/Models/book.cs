@@ -1,11 +1,12 @@
 namespace CatalogService.Models
 {
-    public class Book
-    {
-        public int Id { get; set; }
-        public string Title { get; set; } = string.Empty;
-        public string Author { get; set; } = string.Empty;
-        public decimal Price { get; set; }
-        public int Year { get; set; }
-    }
+public class Book
+{
+    public Guid id { get; set; }
+    public string title { get; set; }
+    public string author { get; set; }
+    public decimal price { get; set; }
+    public string? description { get; set; }
+    public DateTime? published_date { get; set; }
+}
 }

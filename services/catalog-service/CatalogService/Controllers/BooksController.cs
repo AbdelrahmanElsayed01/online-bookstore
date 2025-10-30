@@ -1,7 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using CatalogService.Models;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading.Tasks;
+using System.Text.Json;
+using System;
+using System.Collections.Generic;
 
 namespace CatalogService.Controllers
 {
@@ -9,89 +15,106 @@ namespace CatalogService.Controllers
     [Route("api/[controller]")]
     public class BooksController : ControllerBase
     {
-        private static readonly object _booksLock = new();
-        private static int _nextId = 4; // Start from 4 since we have books 1, 2, 3
-        private static readonly List<Book> Books = new()
+        private readonly HttpClient _http;
+        private readonly string _baseUrl;
+        private readonly string _anonKey;
+        private readonly string _serviceKey;
+        private readonly string _booksEndpoint;
+
+        public BooksController(IConfiguration config)
         {
-            new Book { Id = 1, Title = "Clean Code", Author = "Robert C. Martin", Price = 29.99M, Year = 2008 },
-            new Book { Id = 2, Title = "The Pragmatic Programmer", Author = "Andy Hunt", Price = 34.99M, Year = 1999 },
-            new Book { Id = 3, Title = "Design Patterns", Author = "Erich Gamma", Price = 39.99M, Year = 1994 }
-        };
+            _baseUrl = config["SUPABASE_URL"] ?? throw new Exception("SUPABASE_URL missing");
+            _anonKey = config["SUPABASE_KEY"] ?? throw new Exception("SUPABASE_KEY missing");
+            _serviceKey = config["SUPABASE_SERVICE_KEY"] ?? throw new Exception("SUPABASE_SERVICE_KEY missing");
+            _booksEndpoint = _baseUrl.TrimEnd('/') + "/rest/v1/books";
+            _http = new HttpClient();
+        }
 
-        // Public: no authentication required
-        [HttpGet("public")]
-        public IActionResult PublicEndpoint() =>
-            Ok("✅ Public endpoint, no authentication needed.");
-
-        // Protected: requires Supabase JWT
         [HttpGet]
         [Authorize]
-        public IActionResult GetAll()
+        public async Task<IActionResult> GetAll()
         {
-            lock (_booksLock)
-            {
-                var userId = User.FindFirstValue("sub"); // Supabase user UUID
-                var validBooks = Books.Where(b => b != null).ToList();
-                return Ok(new { userId, books = validBooks });
-            }
+            var req = new HttpRequestMessage(HttpMethod.Get, _booksEndpoint);
+            req.Headers.Add("apikey", _anonKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _anonKey);
+
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            var json = await resp.Content.ReadAsStringAsync();
+            var books = JsonSerializer.Deserialize<List<Book>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return Ok(books);
         }
 
         [HttpGet("{id}")]
         [Authorize]
-        public IActionResult GetBook(int id)
+        public async Task<IActionResult> GetById(Guid id)
         {
-            lock (_booksLock)
-            {
-                var book = Books.FirstOrDefault(b => b != null && b.Id == id);
-                if (book == null) return NotFound();
-                return Ok(book);
-            }
+            var reqUrl = _booksEndpoint + $"?id=eq.{id}";
+            var req = new HttpRequestMessage(HttpMethod.Get, reqUrl);
+            req.Headers.Add("apikey", _anonKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _anonKey);
+
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            var items = JsonSerializer.Deserialize<List<Book>>(await resp.Content.ReadAsStringAsync(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var book = items != null && items.Count > 0 ? items[0] : null;
+            return book == null ? NotFound() : Ok(book);
         }
 
         [HttpPost]
         [Authorize]
-        public IActionResult CreateBook(Book newBook)
+        public async Task<IActionResult> Create([FromBody] Book book)
         {
-            lock (_booksLock)
-            {
-                // Use atomic counter to avoid ID conflicts
-                newBook.Id = _nextId++;
-                Books.Add(newBook);
+            book.id = Guid.NewGuid();
+            if (book.published_date == null) book.published_date = DateTime.UtcNow;
+            var json = JsonSerializer.Serialize(book);
+            Console.WriteLine($"Outgoing Supabase payload:\n{json}");
 
-                return CreatedAtAction(nameof(GetBook), new { id = newBook.Id }, newBook);
-            }
+            var req = new HttpRequestMessage(HttpMethod.Post, _booksEndpoint)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            req.Headers.Add("apikey", _serviceKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+
+            var resp = await _http.SendAsync(req);
+            var body = await resp.Content.ReadAsStringAsync();
+            Console.WriteLine($"Supabase POST response: {resp.StatusCode}\n{body}");
+            if (!resp.IsSuccessStatusCode)
+                return StatusCode((int)resp.StatusCode, body);
+
+            return CreatedAtAction(nameof(GetById), new { id = book.id }, book);
         }
 
         [HttpPut("{id}")]
         [Authorize]
-        public IActionResult UpdateBook(int id, Book updatedBook)
+        public async Task<IActionResult> Update(Guid id, [FromBody] Book updated)
         {
-            lock (_booksLock)
+            updated.id = id;
+            var json = JsonSerializer.Serialize(updated);
+            var req = new HttpRequestMessage(HttpMethod.Patch, _booksEndpoint + $"?id=eq.{id}")
             {
-                var book = Books.FirstOrDefault(b => b != null && b.Id == id);
-                if (book == null) return NotFound();
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            req.Headers.Add("apikey", _serviceKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
 
-                book.Title = updatedBook.Title;
-                book.Author = updatedBook.Author;
-                book.Price = updatedBook.Price;
-                book.Year = updatedBook.Year;
-
-                return NoContent();
-            }
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            return NoContent();
         }
 
         [HttpDelete("{id}")]
         [Authorize]
-        public IActionResult DeleteBook(int id)
+        public async Task<IActionResult> Delete(Guid id)
         {
-            lock (_booksLock)
-            {
-                var book = Books.FirstOrDefault(b => b != null && b.Id == id);
-                if (book == null) return NotFound();
+            var req = new HttpRequestMessage(HttpMethod.Delete, _booksEndpoint + $"?id=eq.{id}");
+            req.Headers.Add("apikey", _serviceKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
 
-                Books.Remove(book);
-                return NoContent();
-            }
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            return NoContent();
         }
     }
 }

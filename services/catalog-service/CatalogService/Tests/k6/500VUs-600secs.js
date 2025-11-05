@@ -7,7 +7,7 @@ export const options = {
 };
 
 export default function () {
-  const res = http.get('http://localhost:5179/swagger/index.html');
+  const res = http.get('http://catalog-service:8080/swagger/index.html');
   check(res, {
     'status is 200': (r) => r.status === 200,
   });

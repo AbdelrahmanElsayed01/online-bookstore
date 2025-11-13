@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OrderService.Models;
-using System.Net.Http.Json;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace OrderService.Controllers
 {
@@ -9,61 +11,124 @@ namespace OrderService.Controllers
     [Route("api/[controller]")]
     public class OrdersController : ControllerBase
     {
-        private static List<Order> _orders = new List<Order>();
-        private static int _nextId = 1;
-        private readonly HttpClient _httpClient;
+        private readonly HttpClient _http;
+        private readonly HttpClient _catalogClient;
+        private readonly string _ordersEndpoint;
+        private readonly string _anonKey;
+        private readonly string _serviceKey;
 
-        public OrdersController(IHttpClientFactory httpClientFactory)
+        public OrdersController(IConfiguration config, IHttpClientFactory httpClientFactory)
         {
-            _httpClient = httpClientFactory.CreateClient("CatalogService");
+            var baseUrl = config["ORDERS_SUPABASE_URL"] ?? throw new Exception("ORDERS_SUPABASE_URL missing");
+            _anonKey = config["ORDERS_SUPABASE_KEY"] ?? throw new Exception("ORDERS_SUPABASE_KEY missing");
+            _serviceKey = config["ORDERS_SUPABASE_SERVICE_KEY"] ?? throw new Exception("ORDERS_SUPABASE_SERVICE_KEY missing");
+            _ordersEndpoint = baseUrl.TrimEnd('/') + "/rest/v1/orders";
+
+            _http = new HttpClient();
+
+            // ✅ Ensure CatalogService HttpClient always has BaseAddress
+            var catalogBase = config["CATALOG_BASE_URL"] ?? "http://catalog-service:8080/";
+            _catalogClient = httpClientFactory.CreateClient("CatalogService");
+            if (_catalogClient.BaseAddress == null)
+                _catalogClient.BaseAddress = new Uri(catalogBase);
         }
 
         [HttpGet]
         [Authorize]
-        public IActionResult GetAllOrders() => Ok(_orders);
-
-        [HttpGet("{id}")]
-        [Authorize]
-        public IActionResult GetOrder(int id)
+        public async Task<IActionResult> GetAll()
         {
-            var order = _orders.FirstOrDefault(o => o.Id == id);
+            var req = new HttpRequestMessage(HttpMethod.Get, _ordersEndpoint);
+            req.Headers.Add("apikey", _anonKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _anonKey);
+
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            var json = await resp.Content.ReadAsStringAsync();
+
+            var orders = JsonSerializer.Deserialize<List<Order>>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            return Ok(orders);
+        }
+
+        [HttpGet("{id:long}")]
+        [Authorize]
+        public async Task<IActionResult> GetById(long id)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, $"{_ordersEndpoint}?id=eq.{id}");
+            req.Headers.Add("apikey", _anonKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _anonKey);
+
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            var json = await resp.Content.ReadAsStringAsync();
+
+            var items = JsonSerializer.Deserialize<List<Order>>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            var order = (items != null && items.Count > 0) ? items[0] : null;
             return order == null ? NotFound() : Ok(order);
         }
 
         [HttpPost]
         [Authorize]
-        public async Task<IActionResult> CreateOrder([FromBody] Order order)
+        public async Task<IActionResult> Create([FromBody] CreateOrderRequest request)
         {
-            // Forward the JWT token to the CatalogService
+            // 1️⃣ Validate book exists via Catalog Service (forward caller JWT)
             var authHeader = Request.Headers["Authorization"].FirstOrDefault();
-            if (authHeader != null)
+            if (!string.IsNullOrWhiteSpace(authHeader))
             {
-                _httpClient.DefaultRequestHeaders.Authorization = 
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", 
-                        authHeader.Substring("Bearer ".Length));
+                _catalogClient.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer",
+                        authHeader.StartsWith("Bearer ") ? authHeader.Substring(7) : authHeader);
             }
 
-            // Call catalog-service
-            var response = await _httpClient.GetAsync($"api/books/{order.BookId}");
+            // ✅ use relative path since BaseAddress is guaranteed above
+            var bookResp = await _catalogClient.GetAsync($"/api/books/{request.book_id}");
+            if (bookResp.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return BadRequest($"Book {request.book_id} not found in Catalog.");
+            bookResp.EnsureSuccessStatusCode();
 
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            // 2️⃣ Build order
+            var userIdClaim = User.FindFirst("sub")?.Value;
+            if (string.IsNullOrWhiteSpace(userIdClaim))
+                return Unauthorized("User id (sub) not found in token.");
+
+            var newOrder = new Order
             {
-                return BadRequest($"Book with id {order.BookId} not found in CatalogService.");
-            }
+                user_id = Guid.Parse(userIdClaim),
+                book_id = request.book_id,
+                amount = 0.01m,
+                status = "pending",
+                created_at = DateTime.UtcNow
+            };
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            // 3️⃣ Insert into Supabase Orders
+            var json = JsonSerializer.Serialize(newOrder);
+            var req = new HttpRequestMessage(HttpMethod.Post, _ordersEndpoint)
             {
-                return Unauthorized("Unauthorized to access CatalogService.");
-            }
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            req.Headers.Add("apikey", _serviceKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+            req.Headers.Add("Prefer", "return=representation");
 
-            response.EnsureSuccessStatusCode();
+            var resp = await _http.SendAsync(req);
+            var body = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+                return StatusCode((int)resp.StatusCode, body);
 
-            var book = await response.Content.ReadFromJsonAsync<Book>();
+            var createdList = JsonSerializer.Deserialize<List<Order>>(body, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            var created = createdList!.First();
 
-            order.Id = _nextId++;
-            _orders.Add(order);
-
-            return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
+            return CreatedAtAction(nameof(GetById), new { id = created.id }, created);
         }
     }
 }

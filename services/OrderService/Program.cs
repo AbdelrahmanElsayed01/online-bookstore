@@ -1,35 +1,33 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add controllers and Swagger
+// Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "Order Service API", Version = "v1" });
-    
-    // Add JWT authentication to Swagger
-    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    c.SwaggerDoc("v1", new() { Title = "Orders Service API", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "JWT Authorization header using the Bearer scheme. Enter your token in the text input below.",
+        Description = "JWT Authorization header using the Bearer scheme.",
         Name = "Authorization",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT"
     });
-
-    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            new OpenApiSecurityScheme
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                Reference = new OpenApiReference
                 {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Type = ReferenceType.SecurityScheme,
                     Id = "Bearer"
                 }
             },
@@ -38,35 +36,27 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Add HttpClient for calling CatalogService
-// Use Docker service name when running in Docker, localhost when running locally
-var catalogServiceUrl = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
-    ? "http://catalog-service:8080/" // Docker service name
-    : "http://localhost:5179/"; // Local development
-
-builder.Services.AddHttpClient("CatalogService", client =>
+// CORS
+builder.Services.AddCors(o =>
 {
-    client.BaseAddress = new Uri(catalogServiceUrl);
-    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    o.AddPolicy("AllowFrontend", p => p
+        .WithOrigins("http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001")
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials());
 });
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowFrontend",
-        policy => policy
-            .WithOrigins("http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001") // frontend origins
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials());
-});
+// HttpClientFactory
+builder.Services.AddHttpClient();
 
-// JWT settings from configuration (appsettings or env vars)
+// JWT env vars
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
 var jwtSecret = builder.Configuration["Jwt:Secret"];
 
+if (string.IsNullOrWhiteSpace(jwtSecret))
+    throw new InvalidOperationException("Missing JWT secret");
 
-// If the secret is Base64 (Supabase default), decode it; otherwise fall back to UTF8
 byte[] signingKeyBytes;
 try
 {
@@ -80,74 +70,56 @@ catch (FormatException)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false; // dev only
+        options.RequireHttpsMetadata = false;
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidIssuer = jwtIssuer,
-
             ValidateAudience = true,
             ValidAudience = jwtAudience,
-
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes),
-
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30),
-            
-            // Configure for Supabase tokens
             RequireSignedTokens = true,
             TryAllIssuerSigningKeys = true,
-            RequireExpirationTime = true,
+            RequireExpirationTime = true
         };
 
-        // Custom JWT validation for Supabase tokens
+        // Manual fallback (same as CatalogService)
         options.Events = new JwtBearerEvents
         {
-            OnTokenValidated = ctx =>
-            {
-                var log = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-                log.LogInformation("JWT validated for sub: {sub}", ctx.Principal?.FindFirst("sub")?.Value);
-                return Task.CompletedTask;
-            },
             OnAuthenticationFailed = ctx =>
             {
                 var log = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-                log.LogError(ctx.Exception, "JWT authentication failed: {error}", ctx.Exception?.Message);
-                
-                // For Supabase tokens with kid, try manual validation
-                if (ctx.Exception is SecurityTokenSignatureKeyNotFoundException)
+                log.LogError(ctx.Exception, "❌ JWT authentication failed: {error}", ctx.Exception?.Message);
+
+                if (ctx.Exception is SecurityTokenSignatureKeyNotFoundException or SecurityTokenInvalidSignatureException)
                 {
-                    log.LogInformation("Attempting manual JWT validation for Supabase token");
-                    
+                    log.LogInformation("Attempting manual Supabase token validation fallback...");
+
                     var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
                     if (authHeader != null && authHeader.StartsWith("Bearer "))
                     {
                         var token = authHeader.Substring(7);
-                        
-                        // Manual validation - decode and verify basic claims
                         try
                         {
                             var handler = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler();
-                            var jsonToken = handler.ReadJsonWebToken(token);
-                            
-                            // Check issuer
-                            if (jsonToken.Issuer == jwtIssuer && 
-                                jsonToken.Audiences.Contains(jwtAudience) &&
-                                jsonToken.ValidTo > DateTime.UtcNow)
+                            var jwt = handler.ReadJsonWebToken(token);
+
+                            if (jwt.Issuer == jwtIssuer &&
+                                jwt.Audiences.Contains(jwtAudience) &&
+                                jwt.ValidTo > DateTime.UtcNow)
                             {
-                                log.LogInformation("Manual JWT validation successful");
-                                
-                                // Create claims principal manually
+                                log.LogInformation("✅ Manual validation succeeded (Supabase token).");
                                 var claims = new List<System.Security.Claims.Claim>
                                 {
-                                    new System.Security.Claims.Claim("sub", jsonToken.Subject ?? ""),
-                                    new System.Security.Claims.Claim("email", jsonToken.GetClaim("email")?.Value ?? ""),
-                                    new System.Security.Claims.Claim("aud", jsonToken.Audiences.FirstOrDefault() ?? ""),
-                                    new System.Security.Claims.Claim("iss", jsonToken.Issuer ?? "")
+                                    new("sub", jwt.Subject ?? ""),
+                                    new("email", jwt.GetClaim("email")?.Value ?? ""),
+                                    new("aud", jwt.Audiences.FirstOrDefault() ?? ""),
+                                    new("iss", jwt.Issuer ?? "")
                                 };
-                                
                                 var identity = new System.Security.Claims.ClaimsIdentity(claims, "jwt");
                                 ctx.Principal = new System.Security.Claims.ClaimsPrincipal(identity);
                                 ctx.Success();
@@ -155,11 +127,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                         }
                         catch (Exception ex)
                         {
-                            log.LogError(ex, "Manual JWT validation failed");
+                            log.LogError(ex, "Manual validation failed.");
                         }
                     }
                 }
-                
+
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = ctx =>
+            {
+                var log = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                log.LogInformation("✅ JWT validated for sub: {sub}",
+                    ctx.Principal?.FindFirst("sub")?.Value ?? "unknown");
                 return Task.CompletedTask;
             }
         };
@@ -169,13 +148,6 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// ✅ Now we can log, since app.Services exists
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
-if (string.IsNullOrEmpty(jwtIssuer) || string.IsNullOrEmpty(jwtAudience) || string.IsNullOrEmpty(jwtSecret))
-{
-    logger.LogWarning("⚠️ JWT config values are missing. Check Jwt:Issuer, Jwt:Audience, Jwt:Secret.");
-}
-
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -183,19 +155,16 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseCors("AllowFrontend");
-
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
-// Health check endpoint
 app.MapGet("/health", () => new
 {
     Status = "Healthy",
-    Service = "Order Service",
+    Service = "Orders Service",
     Timestamp = DateTime.UtcNow,
     Version = "1.0.0"
 });

@@ -1,27 +1,36 @@
 {
   "version": 2,
-  "dgSpecHash": "2VXko/jJY2U=",
+  "dgSpecHash": "Ue7XvplOsU4=",
   "success": true,
   "projectFilePath": "/Users/abdelrahmanelsayed/online-bookstore/services/OrderService/OrderService.csproj",
   "expectedPackageFiles": [
     "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.aspnetcore.authentication.jwtbearer/8.0.8/microsoft.aspnetcore.authentication.jwtbearer.8.0.8.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.aspnetcore.openapi/8.0.8/microsoft.aspnetcore.openapi.8.0.8.nupkg.sha512",
     "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.extensions.apidescription.server/6.0.5/microsoft.extensions.apidescription.server.6.0.5.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.abstractions/7.1.2/microsoft.identitymodel.abstractions.7.1.2.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.jsonwebtokens/7.1.2/microsoft.identitymodel.jsonwebtokens.7.1.2.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.logging/7.1.2/microsoft.identitymodel.logging.7.1.2.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.abstractions/7.5.1/microsoft.identitymodel.abstractions.7.5.1.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.jsonwebtokens/7.5.1/microsoft.identitymodel.jsonwebtokens.7.5.1.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.logging/7.5.1/microsoft.identitymodel.logging.7.5.1.nupkg.sha512",
     "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.protocols/7.1.2/microsoft.identitymodel.protocols.7.1.2.nupkg.sha512",
     "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.protocols.openidconnect/7.1.2/microsoft.identitymodel.protocols.openidconnect.7.1.2.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.tokens/7.1.2/microsoft.identitymodel.tokens.7.1.2.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.openapi/1.4.3/microsoft.openapi.1.4.3.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.identitymodel.tokens/7.5.1/microsoft.identitymodel.tokens.7.5.1.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.openapi/1.2.3/microsoft.openapi.1.2.3.nupkg.sha512",
     "/Users/abdelrahmanelsayed/.nuget/packages/swashbuckle.aspnetcore/6.5.0/swashbuckle.aspnetcore.6.5.0.nupkg.sha512",
     "/Users/abdelrahmanelsayed/.nuget/packages/swashbuckle.aspnetcore.swagger/6.5.0/swashbuckle.aspnetcore.swagger.6.5.0.nupkg.sha512",
     "/Users/abdelrahmanelsayed/.nuget/packages/swashbuckle.aspnetcore.swaggergen/6.5.0/swashbuckle.aspnetcore.swaggergen.6.5.0.nupkg.sha512",
     "/Users/abdelrahmanelsayed/.nuget/packages/swashbuckle.aspnetcore.swaggerui/6.5.0/swashbuckle.aspnetcore.swaggerui.6.5.0.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/system.identitymodel.tokens.jwt/7.1.2/system.identitymodel.tokens.jwt.7.1.2.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.20/microsoft.aspnetcore.app.ref.8.0.20.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.netcore.app.host.osx-arm64/8.0.20/microsoft.netcore.app.host.osx-arm64.8.0.20.nupkg.sha512",
-    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.netcore.app.ref/8.0.20/microsoft.netcore.app.ref.8.0.20.nupkg.sha512"
+    "/Users/abdelrahmanelsayed/.nuget/packages/system.identitymodel.tokens.jwt/7.5.1/system.identitymodel.tokens.jwt.7.5.1.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.netcore.app.ref/8.0.21/microsoft.netcore.app.ref.8.0.21.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.21/microsoft.aspnetcore.app.ref.8.0.21.nupkg.sha512",
+    "/Users/abdelrahmanelsayed/.nuget/packages/microsoft.netcore.app.host.osx-arm64/8.0.21/microsoft.netcore.app.host.osx-arm64.8.0.21.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1900",
+      "level": "Warning",
+      "message": "Error occurred while getting package vulnerability data: Unable to load the service index for source https://api.nuget.org/v3/index.json.",
+      "projectPath": "/Users/abdelrahmanelsayed/online-bookstore/services/OrderService/OrderService.csproj",
+      "warningLevel": 1,
+      "filePath": "/Users/abdelrahmanelsayed/online-bookstore/services/OrderService/OrderService.csproj",
+      "targetGraphs": []
+    }
+  ]
 }

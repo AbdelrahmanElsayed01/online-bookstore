@@ -158,6 +158,9 @@ jobs:
         echo "deb [signed-by=/etc/apt/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list > /dev/null
         sudo apt-get update
         sudo apt-get install -y k6
+      
+    - name: Create monitoring network
+      run: docker network create monitoring || true
     
     - name: Start services for testing
       run: |

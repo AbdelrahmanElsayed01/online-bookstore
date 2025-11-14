@@ -5,9 +5,6 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace CatalogService.Controllers
 {
@@ -127,6 +124,125 @@ namespace CatalogService.Controllers
             resp.EnsureSuccessStatusCode();
 
             return NoContent();
+        }
+
+        // ---------- SAGA SUPPORT: RESERVE / RELEASE STOCK ----------
+
+        // POST /api/books/{id}/reserve
+        [HttpPost("{id}/reserve")]
+        [Authorize]
+        public async Task<IActionResult> ReserveStock(Guid id)
+        {
+            // 1) Get the book (using service key to see stock)
+            var getReq = new HttpRequestMessage(HttpMethod.Get, $"{_booksEndpoint}?id=eq.{id}");
+            getReq.Headers.Add("apikey", _serviceKey);
+            getReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+
+            var getResp = await _http.SendAsync(getReq);
+            getResp.EnsureSuccessStatusCode();
+
+            var json = await getResp.Content.ReadAsStringAsync();
+            var items = JsonSerializer.Deserialize<List<Book>>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            var book = items != null && items.Count > 0 ? items[0] : null;
+            if (book == null)
+                return NotFound($"Book {id} not found.");
+
+            var currentStock = book.stock ?? 0;
+            if (currentStock <= 0)
+                return Conflict(new { message = "Out of stock" });
+
+            var newStock = currentStock - 1;
+
+            // 2) Patch stock
+            var patchBody = JsonSerializer.Serialize(new { stock = newStock });
+            var patchReq = new HttpRequestMessage(HttpMethod.Patch, $"{_booksEndpoint}?id=eq.{id}")
+            {
+                Content = new StringContent(patchBody, Encoding.UTF8, "application/json")
+            };
+            patchReq.Headers.Add("apikey", _serviceKey);
+            patchReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+            patchReq.Headers.Add("Prefer", "return=representation");
+
+            var patchResp = await _http.SendAsync(patchReq);
+            var patchContent = await patchResp.Content.ReadAsStringAsync();
+
+            if (!patchResp.IsSuccessStatusCode)
+                return StatusCode((int)patchResp.StatusCode, patchContent);
+
+            var updatedList = JsonSerializer.Deserialize<List<Book>>(patchContent, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            var updated = updatedList?.FirstOrDefault();
+
+            return Ok(new
+            {
+                message = "Stock reserved",
+                book_id = id,
+                previous_stock = currentStock,
+                new_stock = updated?.stock ?? newStock
+            });
+        }
+
+        // POST /api/books/{id}/release
+        [HttpPost("{id}/release")]
+        [Authorize]
+        public async Task<IActionResult> ReleaseStock(Guid id)
+        {
+            // 1) Get the book
+            var getReq = new HttpRequestMessage(HttpMethod.Get, $"{_booksEndpoint}?id=eq.{id}");
+            getReq.Headers.Add("apikey", _serviceKey);
+            getReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+
+            var getResp = await _http.SendAsync(getReq);
+            getResp.EnsureSuccessStatusCode();
+
+            var json = await getResp.Content.ReadAsStringAsync();
+            var items = JsonSerializer.Deserialize<List<Book>>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            var book = items != null && items.Count > 0 ? items[0] : null;
+            if (book == null)
+                return NotFound($"Book {id} not found.");
+
+            var currentStock = book.stock ?? 0;
+            var newStock = currentStock + 1;
+
+            // 2) Patch stock
+            var patchBody = JsonSerializer.Serialize(new { stock = newStock });
+            var patchReq = new HttpRequestMessage(HttpMethod.Patch, $"{_booksEndpoint}?id=eq.{id}")
+            {
+                Content = new StringContent(patchBody, Encoding.UTF8, "application/json")
+            };
+            patchReq.Headers.Add("apikey", _serviceKey);
+            patchReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+            patchReq.Headers.Add("Prefer", "return=representation");
+
+            var patchResp = await _http.SendAsync(patchReq);
+            var patchContent = await patchResp.Content.ReadAsStringAsync();
+
+            if (!patchResp.IsSuccessStatusCode)
+                return StatusCode((int)patchResp.StatusCode, patchContent);
+
+            var updatedList = JsonSerializer.Deserialize<List<Book>>(patchContent, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            var updated = updatedList?.FirstOrDefault();
+
+            return Ok(new
+            {
+                message = "Stock released",
+                book_id = id,
+                previous_stock = currentStock,
+                new_stock = updated?.stock ?? newStock
+            });
         }
     }
 }

@@ -11,5 +11,7 @@ namespace CatalogService.Models
         public string? image_url_s { get; set; }
         public string? image_url_m { get; set; }
         public string? image_url_l { get; set; }
+        public int? stock { get; set; }
     }
 }
+

@@ -1,13 +1,20 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
 export const options = {
   vus: 50,          // 50 virtual users
   duration: '2m',   // test runs for 2 minutes
+
+  thresholds: {
+    checks: ['rate>0.95'],          // at least 95% of checks must pass
+    http_req_failed: ['rate<0.05'], // allow up to 5% request failures
+    http_req_duration: ['p(95)<2000'], // 95% of requests must be under 2s
+  },
 };
 
 const BASE_URL = 'http://catalog-service:8080/api/books';
-const TOKEN = 'eyJhbGciOiJIUzI1NiIsImtpZCI6IktFd28vbEFtbDc1dHMrUmciLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2N5ZWNlc2Fndmdnc3htcmZyeXNlLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJkN2ViOWZjYy00Zjg2LTQxNjAtODVhNC04MjUwMmU1YTc4OTgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzYyMzc0MTM1LCJpYXQiOjE3NjIzNzA1MzUsImVtYWlsIjoiYWJkZWxyaG1hbmdhZDE5N0BnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc2MjM3MDUzNX1dLCJzZXNzaW9uX2lkIjoiODM3NzczNzUtYzBhMS00NmM4LWI5NTItNzZlYzUwMDAwY2Q2IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.8E0SLcsiC-12eYIGb_YmD0YhjjulSbgElA_qNfmPuoY';
+const TOKEN = 'eyJhbGciOiJIUzI1NiIsImtpZCI6IktFd28vbEFtbDc1dHMrUmciLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2N5ZWNlc2Fndmdnc3htcmZyeXNlLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJkN2ViOWZjYy00Zjg2LTQxNjAtODVhNC04MjUwMmU1YTc4OTgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzYzMTExNzc5LCJpYXQiOjE3NjMxMDgxNzksImVtYWlsIjoiYWJkZWxyaG1hbmdhZDE5N0BnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc2MzEwODE3OX1dLCJzZXNzaW9uX2lkIjoiMDM2YzRlMTAtNzQ4Ny00MTViLTkwZTQtNDJhM2Q1Y2MwNTU5IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.2-8WBYpLEtoYAzuSLV4OT_JmlnT65dV-l2VdPiCJRr4';
 
 const HEADERS = {
   Authorization: `Bearer ${TOKEN}`,
@@ -21,11 +28,18 @@ export default function () {
 
   // 2. POST new book
   const newBook = JSON.stringify({
-    title: `LoadTest Book ${__VU}-${__ITER}`, // unique title
-    author: 'Performance Bot',
-    year: 2025,
-    price: 19.99,
+    id: uuidv4(),
+    isbn: `ISBN-${__VU}-${__ITER}`,
+    book_title: `LoadTest Book ${__VU}-${__ITER}`,
+    book_author: 'Performance Bot',
+    year_of_publication: 2025,
+    publisher: 'LoadTest Publisher',
+    image_url_s: 'https://example.com/s.jpg',
+    image_url_m: 'https://example.com/m.jpg',
+    image_url_l: 'https://example.com/l.jpg',
+    stock: 10,
   });
+
   const postRes = http.post(BASE_URL, newBook, { headers: HEADERS });
   check(postRes, { 'POST /Books is 201': (r) => r.status === 201 || r.status === 200 });
 
@@ -38,12 +52,19 @@ export default function () {
 
   // 3. PUT update the created book
   if (bookId) {
-    const updateBook = JSON.stringify({ 
-      title: `Updated LoadTest Book ${__VU}-${__ITER}`,
-      author: 'Performance Bot Updated',
-      price: 24.99,
-      year: 2025
+    const updateBook = JSON.stringify({
+      id: uuidv4(),
+      isbn: `ISBN-${__VU}-${__ITER}`,
+      book_title: `update LoadTest Book ${__VU}-${__ITER}`,
+      book_author: 'update Performance Bot',
+      year_of_publication: 2025,
+      publisher: 'update LoadTest Publisher',
+      image_url_s: 'https://example.com/s.jpg',
+      image_url_m: 'https://example.com/m.jpg',
+      image_url_l: 'https://example.com/l.jpg',
+      stock: 10,
     });
+
     const putRes = http.put(`${BASE_URL}/${bookId}`, updateBook, { headers: HEADERS });
     check(putRes, { 'PUT /Books/:id is 204': (r) => r.status === 204 });
   }
@@ -54,5 +75,5 @@ export default function () {
     check(delRes, { 'DELETE /Books/:id is 200 or 204': (r) => r.status === 200 || r.status === 204 });
   }
 
-  sleep(1); // small pause between iterations
+  sleep(1);
 }

@@ -16,9 +16,12 @@ namespace OrderService.Controllers
         private readonly string _ordersEndpoint;
         private readonly string _anonKey;
         private readonly string _serviceKey;
+        private readonly ILogger<OrdersController> _logger;
 
-        public OrdersController(IConfiguration config, IHttpClientFactory httpClientFactory)
+        public OrdersController(IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<OrdersController> logger)
         {
+            _logger = logger;
+
             var baseUrl = config["ORDERS_SUPABASE_URL"] ?? throw new Exception("ORDERS_SUPABASE_URL missing");
             _anonKey = config["ORDERS_SUPABASE_KEY"] ?? throw new Exception("ORDERS_SUPABASE_KEY missing");
             _serviceKey = config["ORDERS_SUPABASE_SERVICE_KEY"] ?? throw new Exception("ORDERS_SUPABASE_SERVICE_KEY missing");
@@ -26,7 +29,6 @@ namespace OrderService.Controllers
 
             _http = new HttpClient();
 
-            // ✅ Ensure CatalogService HttpClient always has BaseAddress
             var catalogBase = config["CATALOG_BASE_URL"] ?? "http://catalog-service:8080/";
             _catalogClient = httpClientFactory.CreateClient("CatalogService");
             if (_catalogClient.BaseAddress == null)
@@ -74,11 +76,24 @@ namespace OrderService.Controllers
             return order == null ? NotFound() : Ok(order);
         }
 
+        // ---------- SAGA ORCHESTRATION: RESERVE STOCK + CREATE ORDER ----------
+
         [HttpPost]
         [Authorize]
         public async Task<IActionResult> Create([FromBody] CreateOrderRequest request)
         {
-            // 1️⃣ Validate book exists via Catalog Service (forward caller JWT)
+            if (request.book_id == Guid.Empty)
+                return BadRequest("book_id is required.");
+
+            // 1️⃣ Get user id from JWT (Supabase "sub")
+            var userIdClaim = User.FindFirst("sub")?.Value;
+            if (string.IsNullOrWhiteSpace(userIdClaim))
+                return Unauthorized("User id (sub) not found in token.");
+
+            if (!Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized("User id (sub) is not a valid GUID.");
+
+            // 2️⃣ Forward token to CatalogService
             var authHeader = Request.Headers["Authorization"].FirstOrDefault();
             if (!string.IsNullOrWhiteSpace(authHeader))
             {
@@ -87,46 +102,94 @@ namespace OrderService.Controllers
                         authHeader.StartsWith("Bearer ") ? authHeader.Substring(7) : authHeader);
             }
 
-            // ✅ use relative path since BaseAddress is guaranteed above
-            var bookResp = await _catalogClient.GetAsync($"/api/books/{request.book_id}");
-            if (bookResp.StatusCode == System.Net.HttpStatusCode.NotFound)
-                return BadRequest($"Book {request.book_id} not found in Catalog.");
-            bookResp.EnsureSuccessStatusCode();
+            // 3️⃣ Saga Step 1: Reserve stock in CatalogService
+            _logger.LogInformation("Starting Saga: reserve stock for book {BookId}", request.book_id);
 
-            // 2️⃣ Build order
-            var userIdClaim = User.FindFirst("sub")?.Value;
-            if (string.IsNullOrWhiteSpace(userIdClaim))
-                return Unauthorized("User id (sub) not found in token.");
+            var reserveResp = await _catalogClient.PostAsync($"/api/books/{request.book_id}/reserve", null);
 
-            var newOrder = new Order
+            if (reserveResp.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                user_id = Guid.Parse(userIdClaim),
+                _logger.LogWarning("Book {BookId} not found in catalog.", request.book_id);
+                return BadRequest($"Book {request.book_id} not found in Catalog.");
+            }
+
+            if (reserveResp.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                _logger.LogWarning("Out of stock for book {BookId}.", request.book_id);
+                // out of stock, Saga stops here
+                var reason = await reserveResp.Content.ReadAsStringAsync();
+                return BadRequest($"Out of stock: {reason}");
+            }
+
+            if (!reserveResp.IsSuccessStatusCode)
+            {
+                var body = await reserveResp.Content.ReadAsStringAsync();
+                _logger.LogError("Unexpected error reserving stock. Status: {Status}, Body: {Body}",
+                    reserveResp.StatusCode, body);
+                return StatusCode((int)reserveResp.StatusCode, body);
+            }
+
+            _logger.LogInformation("Stock reserved for book {BookId}. Proceeding to create order.", request.book_id);
+
+            // 4️⃣ Saga Step 2: Insert order into Orders DB (Supabase)
+            var insertDto = new InsertOrderDto
+            {
+                user_id = userId,
                 book_id = request.book_id,
-                amount = 0.01m,
+                amount = 0.01m,     // 1 cent for school project
                 status = "pending",
                 created_at = DateTime.UtcNow
             };
 
-            // 3️⃣ Insert into Supabase Orders
-            var json = JsonSerializer.Serialize(newOrder);
-            var req = new HttpRequestMessage(HttpMethod.Post, _ordersEndpoint)
+            var json = JsonSerializer.Serialize(insertDto);
+            var orderReq = new HttpRequestMessage(HttpMethod.Post, _ordersEndpoint)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
-            req.Headers.Add("apikey", _serviceKey);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
-            req.Headers.Add("Prefer", "return=representation");
+            orderReq.Headers.Add("apikey", _serviceKey);
+            orderReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+            orderReq.Headers.Add("Prefer", "return=representation");
 
-            var resp = await _http.SendAsync(req);
-            var body = await resp.Content.ReadAsStringAsync();
-            if (!resp.IsSuccessStatusCode)
-                return StatusCode((int)resp.StatusCode, body);
+            var orderResp = await _http.SendAsync(orderReq);
+            var orderBody = await orderResp.Content.ReadAsStringAsync();
 
-            var createdList = JsonSerializer.Deserialize<List<Order>>(body, new JsonSerializerOptions
+            if (!orderResp.IsSuccessStatusCode)
+            {
+                _logger.LogError("Order insert failed. Status: {Status}. Body: {Body}. Triggering compensation.",
+                    orderResp.StatusCode, orderBody);
+
+                // 5️⃣ Saga compensation: release stock in CatalogService
+                try
+                {
+                    var releaseResp = await _catalogClient.PostAsync($"/api/books/{request.book_id}/release", null);
+                    var releaseBody = await releaseResp.Content.ReadAsStringAsync();
+                    if (!releaseResp.IsSuccessStatusCode)
+                    {
+                        _logger.LogError("Compensation (release stock) failed. Status: {Status}. Body: {Body}",
+                            releaseResp.StatusCode, releaseBody);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Compensation successful: stock released for book {BookId}.", request.book_id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Exception during stock release compensation for book {BookId}.", request.book_id);
+                }
+
+                return StatusCode((int)orderResp.StatusCode, orderBody);
+            }
+
+            // 6️⃣ Success: deserialize created order from Supabase
+            var createdList = JsonSerializer.Deserialize<List<Order>>(orderBody, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
             var created = createdList!.First();
+
+            _logger.LogInformation("Saga completed successfully. Order {OrderId} created for book {BookId}.",
+                created.id, created.book_id);
 
             return CreatedAtAction(nameof(GetById), new { id = created.id }, created);
         }

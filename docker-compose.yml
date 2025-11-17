@@ -1,4 +1,19 @@
 services:
+  api-gateway:
+    build:
+      context: ./services/api-gateway/ApiGateway
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    depends_on:
+      - catalog-service
+      - order-service
+    environment:
+      - Jwt__Issuer=${Jwt__Issuer}
+      - Jwt__Audience=${Jwt__Audience}
+    networks:
+      - monitoring
+
   catalog-service:
     build:
       context: ./services/catalog-service

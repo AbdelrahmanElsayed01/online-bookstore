@@ -12,53 +12,29 @@ The CI/CD pipeline is built using GitHub Actions and supports:
 - **Security**: Vulnerability scanning with Trivy
 - **Deployment**: Multiple deployment options (Docker Compose, Kubernetes)
 
-## Pipeline Stages
+## Workflow Layout
 
-### 1. Frontend Pipeline
-- **Trigger**: Push to main/develop branches, pull requests
-- **Steps**:
-  - Checkout code
-  - Setup Node.js 18
-  - Install dependencies
-  - Run linting (if configured)
-  - Build application
-  - Run tests (if configured)
+Each deployable artifact now has its own workflow so that changes remain isolated and easier to troubleshoot. All workflows live under `.github/workflows/`:
 
-### 2. Backend Pipeline
-- **Trigger**: Push to main/develop branches, pull requests
-- **Steps**:
-  - Checkout code
-  - Setup .NET 8.0
-  - Restore dependencies for both services
-  - Build solutions
-  - Run unit tests
+| Workflow | File | Trigger Highlights | Notes |
+| --- | --- | --- | --- |
+| Frontend | `frontend-pipeline.yml` | Push/PR to `main`, `develop`, `loadTesting` touching `frontend/**` | Builds Next.js app, builds/pushes Docker image, deploys to **staging** (develop) and **production** (main). |
+| Catalog Service | `catalog-service-pipeline.yml` | Push/PR to `main`, `develop`, `loadTesting` touching catalog files | Restores, builds and (optionally) tests the Catalog .NET service, builds an image, and runs staged/prod deploy steps. |
+| Order Service | `order-service-pipeline.yml` | Same triggers scoped to `services/OrderService/**` | Mirrors catalog workflow but uses the order Dockerfile/context. |
+| Load Tests | `load-testing-pipeline.yml` | Push to `main` or manual dispatch | Spins up the stack with `docker compose`, runs the k6 suites, and tears everything down. |
 
-### 3. Docker Build & Push
-- **Trigger**: Push to main/develop branches only
-- **Steps**:
-  - Build Docker images for both services
-  - Push to GitHub Container Registry (ghcr.io)
-  - Multi-arch support with caching
+Security scanning can be re-enabled as a dedicated workflow if needed, but the previous combined job has been removed to keep each pipeline focused on its service.
 
-### 4. Load Testing
-- **Trigger**: Push to main branch only
-- **Steps**:
-  - Setup k6 load testing tool
-  - Start services using docker-compose
-  - Run performance tests
-  - Cleanup services
+## Per-Pipeline Stages
 
-### 5. Security Scanning
-- **Trigger**: Pull requests
-- **Steps**:
-  - Run Trivy vulnerability scanner
-  - Upload results to GitHub Security tab
+All service workflows share the same high-level structure:
 
-### 6. Deployment
-- **Trigger**: Push to main branch only
-- **Steps**:
-  - Deploy to production environment
-  - Run health checks
+1. **Build & Test** – Restore dependencies, run linters/tests, and fail fast before any publishing happens.
+2. **Docker Build** – On pushes to `main` or `develop`, log in to GHCR, build the service-specific image, and push versioned/stable tags using `docker/metadata-action`.
+3. **Deploy to Staging** – Runs only on the `develop` branch and targets the GitHub `staging` environment. Replace the placeholder steps with the commands needed to roll out to your staging cluster or compose stack.
+4. **Deploy to Production** – Runs only on the `main` branch and targets the GitHub `production` environment. Same placeholder pattern as staging but intended for prod automation.
+
+The load-testing workflow declares the `staging` environment because the suite exercises the staging deployment as part of the release flow.
 
 ## Setup Instructions
 
@@ -84,16 +60,15 @@ cp env.example .env
 ```
 
 ### 3. Container Registry
-The pipeline uses GitHub Container Registry. Images will be available at:
-- `ghcr.io/your-username/online-bookstore/catalog-service:latest`
-- `ghcr.io/your-username/online-bookstore/order-service:latest`
+All workflows publish to GitHub Container Registry using the pattern  
+`ghcr.io/<owner>/online-bookstore/<service>`. Update the `images` value inside each workflow if you need a different path.
 
 ### 4. Update Image Names
-In the workflow file (`.github/workflows/ci-cd.yml`), update the `IMAGE_NAME` environment variable:
-```yaml
-env:
-  IMAGE_NAME: ${{ github.repository }}  # This will be your-username/online-bookstore
-```
+- Frontend: `.github/workflows/frontend-pipeline.yml`
+- Catalog: `.github/workflows/catalog-service-pipeline.yml`
+- Order: `.github/workflows/order-service-pipeline.yml`
+
+Each workflow uses `docker/metadata-action` for tagging (branch, PR, SHA, latest). Adjust those sections if you need custom tags.
 
 ## Deployment Options
 

@@ -1,0 +1,44 @@
+name: Load Testing Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/catalog-service/CatalogService/Tests/k6/**'
+      - 'services/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/load-testing-pipeline.yml'
+  workflow_dispatch:
+
+jobs:
+  run-load-tests:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup k6
+        run: |
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Create monitoring network
+        run: docker network create monitoring || true
+
+      - name: Start services for testing
+        run: |
+          docker compose up -d
+          sleep 30
+
+      - name: Run smoke and stress suites
+        run: |
+          k6 run services/catalog-service/CatalogService/Tests/k6/10VUs-30secs.js
+          k6 run services/catalog-service/CatalogService/Tests/k6/100VUs-30secs.js
+
+      - name: Tear down services
+        if: always()
+        run: docker compose down

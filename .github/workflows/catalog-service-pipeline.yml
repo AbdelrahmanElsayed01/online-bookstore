@@ -87,26 +87,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy-staging:
+  deploy:
     runs-on: ubuntu-latest
     needs: docker-build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    environment: staging
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     steps:
-      - name: Deploy CatalogService to staging
+      - name: Deploy CatalogService
         run: |
-          echo "Deploying CatalogService to staging..."
+          TARGET_ENV=$([ "${GITHUB_REF##*/}" = "main" ] && echo "production" || echo "staging")
+          echo "Deploying CatalogService to ${TARGET_ENV}..."
           echo "Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/catalog-service:${{ github.sha }}"
-          echo "Add kubectl/helm/docker commands for staging deployment."
-
-  deploy-production:
-    runs-on: ubuntu-latest
-    needs: docker-build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production
-    steps:
-      - name: Deploy CatalogService to production
-        run: |
-          echo "Deploying CatalogService to production..."
-          echo "Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/catalog-service:${{ github.sha }}"
-          echo "Add production deployment automation here."
+          echo "Add ${TARGET_ENV} deployment automation here."

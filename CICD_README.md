@@ -31,8 +31,7 @@ All service workflows share the same high-level structure:
 
 1. **Build & Test** – Restore dependencies, run linters/tests, and fail fast before any publishing happens.
 2. **Docker Build** – On pushes to `main` or `develop`, log in to GHCR, build the service-specific image, and push versioned/stable tags using `docker/metadata-action`.
-3. **Deploy to Staging** – Runs only on the `develop` branch and targets the GitHub `staging` environment. Replace the placeholder steps with the commands needed to roll out to your staging cluster or compose stack.
-4. **Deploy to Production** – Runs only on the `main` branch and targets the GitHub `production` environment. Same placeholder pattern as staging but intended for prod automation.
+3. **Deploy** – A single deploy job handles both environments: when the branch is `develop` it targets the GitHub `staging` environment, and when it is `main` it targets `production`. Replace the placeholder script with your actual rollout commands (Helm, kubectl, docker compose, etc.) and use the `${TARGET_ENV}` shell variable already provided in the workflow to differentiate behavior.
 
 The load-testing workflow declares the `staging` environment because the suite exercises the staging deployment as part of the release flow.
 

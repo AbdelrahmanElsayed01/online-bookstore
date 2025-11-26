@@ -85,7 +85,7 @@ namespace OrderService.Controllers
             if (request.book_id == Guid.Empty)
                 return BadRequest("book_id is required.");
 
-            // 1️⃣ Get user id from JWT (Supabase "sub")
+            // Get user id from JWT (Supabase "sub")
             var userIdClaim = User.FindFirst("sub")?.Value;
             if (string.IsNullOrWhiteSpace(userIdClaim))
                 return Unauthorized("User id (sub) not found in token.");
@@ -93,7 +93,7 @@ namespace OrderService.Controllers
             if (!Guid.TryParse(userIdClaim, out var userId))
                 return Unauthorized("User id (sub) is not a valid GUID.");
 
-            // 2️⃣ Forward token to CatalogService
+            // Forward token to CatalogService
             var authHeader = Request.Headers["Authorization"].FirstOrDefault();
             if (!string.IsNullOrWhiteSpace(authHeader))
             {
@@ -102,7 +102,7 @@ namespace OrderService.Controllers
                         authHeader.StartsWith("Bearer ") ? authHeader.Substring(7) : authHeader);
             }
 
-            // 3️⃣ Saga Step 1: Reserve stock in CatalogService
+            // Saga Step 1: Reserve stock in CatalogService
             _logger.LogInformation("Starting Saga: reserve stock for book {BookId}", request.book_id);
 
             var reserveResp = await _catalogClient.PostAsync($"/api/books/{request.book_id}/reserve", null);
@@ -131,12 +131,12 @@ namespace OrderService.Controllers
 
             _logger.LogInformation("Stock reserved for book {BookId}. Proceeding to create order.", request.book_id);
 
-            // 4️⃣ Saga Step 2: Insert order into Orders DB (Supabase)
+            // Saga Step 2: Insert order into Orders DB (Supabase)
             var insertDto = new InsertOrderDto
             {
                 user_id = userId,
                 book_id = request.book_id,
-                amount = 0.01m,     // 1 cent for school project
+                amount = 0.01m,     // 1 cent just for demo
                 status = "pending",
                 created_at = DateTime.UtcNow
             };
@@ -158,7 +158,7 @@ namespace OrderService.Controllers
                 _logger.LogError("Order insert failed. Status: {Status}. Body: {Body}. Triggering compensation.",
                     orderResp.StatusCode, orderBody);
 
-                // 5️⃣ Saga compensation: release stock in CatalogService
+                // Saga compensation: release stock in CatalogService
                 try
                 {
                     var releaseResp = await _catalogClient.PostAsync($"/api/books/{request.book_id}/release", null);

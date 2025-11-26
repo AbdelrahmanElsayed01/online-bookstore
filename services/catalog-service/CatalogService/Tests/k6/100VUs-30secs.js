@@ -14,6 +14,7 @@ export const options = {
 export default function () {
   const res = http.get('http://localhost:5179/swagger/index.html');
   //http://catalog-service:8080/swagger/index.html use this for grafana
+  //use this for docker http://localhost:5179/swagger/index.html
   check(res, {
     'status is 200': (r) => r.status === 200,
   });

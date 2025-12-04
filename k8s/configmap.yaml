@@ -4,9 +4,9 @@ metadata:
   name: bookstore-config
   namespace: online-bookstore
 data:
-  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_ENVIRONMENT: "Development"
   DOTNET_RUNNING_IN_CONTAINER: "true"
-  NODE_ENV: "production"
+  PAYMENT_BASE_URL: "http://payment-service:8080/"
 ---
 apiVersion: v1
 kind: Secret
@@ -15,8 +15,15 @@ metadata:
   namespace: online-bookstore
 type: Opaque
 stringData:
-  JWT_SECRET: "your-jwt-secret-key"
-  JWT_ISSUER: "https://your-supabase-project.supabase.co/auth/v1"
-  JWT_AUDIENCE: "authenticated"
-  NEXT_PUBLIC_SUPABASE_URL: "https://your-supabase-project.supabase.co"
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: "your-supabase-anon-key"
+  Jwt__Secret: "<jwt-secret>"
+  Jwt__Issuer: "<jwt-issuer>"
+  Jwt__Audience: "<jwt-audience>"
+  SUPABASE_URL: "<catalog-supabase-url>"
+  SUPABASE_KEY: "<catalog-supabase-key>"
+  SUPABASE_SERVICE_KEY: "<catalog-supabase-service-key>"
+  ORDERS_SUPABASE_URL: "<orders-supabase-url>"
+  ORDERS_SUPABASE_KEY: "<orders-supabase-key>"
+  ORDERS_SUPABASE_SERVICE_KEY: "<orders-supabase-service-key>"
+  STRIPE_PUBLISHABLE_KEY: "<stripe-publishable-key>"
+  STRIPE_SECRET_KEY: "<stripe-secret-key>"
+  STRIPE_WEBHOOK_SECRET: "<stripe-webhook-secret>"

@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: monitoring
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+
+    clients:
+    - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+    positions:
+      filename: /run/promtail/positions.yaml
+
+    scrape_configs:
+    - job_name: kubernetes-pods
+      pipeline_stages:
+      - cri: {}
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_container_name]
+        target_label: container
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - action: replace
+        regex: (.*);(.*)
+        source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+        target_label: __path__
+        replacement: /var/log/pods/*$1/*$2/*.log
+    - job_name: catalog-service-manual
+      static_configs:
+      - targets:
+        - localhost
+        labels:
+          namespace: online-bookstore
+          app: catalog-service
+          container: catalog-service
+          __path__: /var/log/pods/online-bookstore_catalog-service-*/catalog-service/*.log
+    - job_name: order-service-manual
+      static_configs:
+      - targets:
+        - localhost
+        labels:
+          namespace: online-bookstore
+          app: order-service
+          container: order-service
+          __path__: /var/log/pods/online-bookstore_order-service-*/order-service/*.log
+    - job_name: api-gateway-manual
+      static_configs:
+      - targets:
+        - localhost
+        labels:
+          namespace: online-bookstore
+          app: api-gateway
+          container: api-gateway
+          __path__: /var/log/pods/online-bookstore_api-gateway-*/api-gateway/*.log

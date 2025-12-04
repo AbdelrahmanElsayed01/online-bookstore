@@ -131,7 +131,7 @@ namespace CatalogService.Controllers
         // POST /api/books/{id}/reserve
         [HttpPost("{id}/reserve")]
         [Authorize]
-        public async Task<IActionResult> ReserveStock(Guid id)
+        public async Task<IActionResult> ReserveStock(Guid id, [FromBody] StockAdjustmentRequest? request = null)
         {
             // 1) Get the book (using service key to see stock)
             var getReq = new HttpRequestMessage(HttpMethod.Get, $"{_booksEndpoint}?id=eq.{id}");
@@ -152,10 +152,14 @@ namespace CatalogService.Controllers
                 return NotFound($"Book {id} not found.");
 
             var currentStock = book.stock ?? 0;
-            if (currentStock <= 0)
-                return Conflict(new { message = "Out of stock" });
+            var quantity = request?.Quantity ?? 1;
+            if (quantity <= 0)
+                return BadRequest("Quantity must be greater than zero.");
 
-            var newStock = currentStock - 1;
+            if (currentStock < quantity)
+                return Conflict(new { message = $"Requested {quantity} item(s) but only {currentStock} left." });
+
+            var newStock = currentStock - quantity;
 
             // 2) Patch stock
             var patchBody = JsonSerializer.Serialize(new { stock = newStock });
@@ -191,7 +195,7 @@ namespace CatalogService.Controllers
         // POST /api/books/{id}/release
         [HttpPost("{id}/release")]
         [Authorize]
-        public async Task<IActionResult> ReleaseStock(Guid id)
+        public async Task<IActionResult> ReleaseStock(Guid id, [FromBody] StockAdjustmentRequest? request = null)
         {
             // 1) Get the book
             var getReq = new HttpRequestMessage(HttpMethod.Get, $"{_booksEndpoint}?id=eq.{id}");
@@ -212,7 +216,11 @@ namespace CatalogService.Controllers
                 return NotFound($"Book {id} not found.");
 
             var currentStock = book.stock ?? 0;
-            var newStock = currentStock + 1;
+            var quantity = request?.Quantity ?? 1;
+            if (quantity <= 0)
+                return BadRequest("Quantity must be greater than zero.");
+
+            var newStock = currentStock + quantity;
 
             // 2) Patch stock
             var patchBody = JsonSerializer.Serialize(new { stock = newStock });
@@ -244,5 +252,10 @@ namespace CatalogService.Controllers
                 new_stock = updated?.stock ?? newStock
             });
         }
+    }
+
+    public class StockAdjustmentRequest
+    {
+        public int Quantity { get; set; } = 1;
     }
 }

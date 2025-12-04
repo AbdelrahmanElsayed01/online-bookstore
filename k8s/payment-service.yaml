@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service
+  name: payment-service
   namespace: online-bookstore
   labels:
-    app: order-service
+    app: payment-service
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: order-service
+      app: payment-service
   template:
     metadata:
       labels:
-        app: order-service
+        app: payment-service
     spec:
       containers:
-      - name: order-service
-        image: order-service:local
+      - name: payment-service
+        image: payment-service:local
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -32,11 +32,6 @@ spec:
             configMapKeyRef:
               name: bookstore-config
               key: DOTNET_RUNNING_IN_CONTAINER
-        - name: PAYMENT_BASE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: bookstore-config
-              key: PAYMENT_BASE_URL
         - name: Jwt__Secret
           valueFrom:
             secretKeyRef:
@@ -52,21 +47,21 @@ spec:
             secretKeyRef:
               name: bookstore-secrets
               key: Jwt__Audience
-        - name: ORDERS_SUPABASE_URL
+        - name: Stripe__PublishableKey
           valueFrom:
             secretKeyRef:
               name: bookstore-secrets
-              key: ORDERS_SUPABASE_URL
-        - name: ORDERS_SUPABASE_KEY
+              key: STRIPE_PUBLISHABLE_KEY
+        - name: Stripe__SecretKey
           valueFrom:
             secretKeyRef:
               name: bookstore-secrets
-              key: ORDERS_SUPABASE_KEY
-        - name: ORDERS_SUPABASE_SERVICE_KEY
+              key: STRIPE_SECRET_KEY
+        - name: Stripe__WebhookSecret
           valueFrom:
             secretKeyRef:
               name: bookstore-secrets
-              key: ORDERS_SUPABASE_SERVICE_KEY
+              key: STRIPE_WEBHOOK_SECRET
         livenessProbe:
           httpGet:
             path: /health
@@ -90,11 +85,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: order-service
+  name: payment-service
   namespace: online-bookstore
 spec:
   selector:
-    app: order-service
+    app: payment-service
   ports:
     - protocol: TCP
       port: 8080

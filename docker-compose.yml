@@ -8,6 +8,7 @@ services:
     depends_on:
       - catalog-service
       - order-service
+      - payment-service
     environment:
       - Jwt__Issuer=${Jwt__Issuer}
       - Jwt__Audience=${Jwt__Audience}
@@ -47,6 +48,25 @@ services:
       - ORDERS_SUPABASE_URL=${ORDERS_SUPABASE_URL}
       - ORDERS_SUPABASE_KEY=${ORDERS_SUPABASE_KEY}
       - ORDERS_SUPABASE_SERVICE_KEY=${ORDERS_SUPABASE_SERVICE_KEY}
+      - PAYMENT_BASE_URL=${PAYMENT_BASE_URL}
+    networks:
+      - monitoring
+
+  payment-service:
+    build:
+      context: ./services/payment-service/PaymentService
+      dockerfile: Dockerfile
+    ports:
+      - "5181:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - Jwt__Issuer=${Jwt__Issuer}
+      - Jwt__Audience=${Jwt__Audience}
+      - Jwt__Secret=${Jwt__Secret}
+      - Stripe__PublishableKey=${STRIPE_PUBLISHABLE_KEY}
+      - Stripe__SecretKey=${STRIPE_SECRET_KEY}
+      - Stripe__WebhookSecret=${STRIPE_WEBHOOK_SECRET}
     networks:
       - monitoring
 

@@ -15,7 +15,8 @@ namespace OrderService.Models
     // Request body from client
     public class CreateOrderRequest
     {
-        public Guid book_id { get; set; }
+        public Guid? book_id { get; set; }
+        public List<OrderItemRequest>? items { get; set; }
     }
 
     // DTO sent to Supabase INSERT (no id!)
@@ -28,11 +29,22 @@ namespace OrderService.Models
         public DateTime created_at { get; set; }
     }
 
-    // Minimal shape of book we care about (optional, but nice to have)
-    public class CatalogBook
+    public class OrderItemRequest
     {
-        public Guid id { get; set; }
-        public int? stock { get; set; }
+        public Guid book_id { get; set; }
+        public int quantity { get; set; } = 1;
+    }
+
+    public class OrderItemSummary
+    {
+        public Guid book_id { get; set; }
+        public int quantity { get; set; }
+    }
+
+    public class OrderResponse
+    {
+        public Order order { get; set; } = default!;
+        public List<OrderItemSummary> items { get; set; } = new();
+        public decimal total_amount { get; set; }
     }
 }
-

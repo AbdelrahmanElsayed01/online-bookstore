@@ -6,7 +6,7 @@ metadata:
   labels:
     app: order-service
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: order-service
@@ -17,28 +17,56 @@ spec:
     spec:
       containers:
       - name: order-service
-        image: ghcr.io/abdelrahmanelsayed/online-bookstore/order-service:latest
+        image: order-service:local
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:
-        - name: JWT__Secret
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: bookstore-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: DOTNET_RUNNING_IN_CONTAINER
+          valueFrom:
+            configMapKeyRef:
+              name: bookstore-config
+              key: DOTNET_RUNNING_IN_CONTAINER
+        - name: PAYMENT_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bookstore-config
+              key: PAYMENT_BASE_URL
+        - name: Jwt__Secret
           valueFrom:
             secretKeyRef:
               name: bookstore-secrets
-              key: JWT_SECRET
-        - name: JWT__Issuer
+              key: Jwt__Secret
+        - name: Jwt__Issuer
           valueFrom:
             secretKeyRef:
               name: bookstore-secrets
-              key: JWT_ISSUER
-        - name: JWT__Audience
+              key: Jwt__Issuer
+        - name: Jwt__Audience
           valueFrom:
             secretKeyRef:
               name: bookstore-secrets
-              key: JWT_AUDIENCE
-        envFrom:
-        - configMapRef:
-            name: bookstore-config
+              key: Jwt__Audience
+        - name: ORDERS_SUPABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: ORDERS_SUPABASE_URL
+        - name: ORDERS_SUPABASE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: ORDERS_SUPABASE_KEY
+        - name: ORDERS_SUPABASE_SERVICE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: ORDERS_SUPABASE_SERVICE_KEY
         livenessProbe:
           httpGet:
             path: /health
@@ -69,6 +97,6 @@ spec:
     app: order-service
   ports:
     - protocol: TCP
-      port: 80
+      port: 8080
       targetPort: 8080
   type: ClusterIP

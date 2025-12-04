@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OrderService.Models;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -13,10 +14,16 @@ namespace OrderService.Controllers
     {
         private readonly HttpClient _http;
         private readonly HttpClient _catalogClient;
+        private readonly HttpClient _paymentClient;
         private readonly string _ordersEndpoint;
         private readonly string _anonKey;
         private readonly string _serviceKey;
+        private readonly string _paymentEndpoint;
         private readonly ILogger<OrdersController> _logger;
+        private readonly JsonSerializerOptions _jsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
 
         public OrdersController(IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<OrdersController> logger)
         {
@@ -33,6 +40,184 @@ namespace OrderService.Controllers
             _catalogClient = httpClientFactory.CreateClient("CatalogService");
             if (_catalogClient.BaseAddress == null)
                 _catalogClient.BaseAddress = new Uri(catalogBase);
+
+            var paymentBase = config["PAYMENT_BASE_URL"] ?? "http://payment-service:8080/";
+            _paymentEndpoint = paymentBase.TrimEnd('/') + "/api/payments/intent";
+            _paymentClient = httpClientFactory.CreateClient("PaymentService");
+            if (_paymentClient.BaseAddress == null)
+                _paymentClient.BaseAddress = new Uri(paymentBase);
+        }
+
+        private async Task<(bool Success, HttpStatusCode StatusCode, string? Message)> ProcessPaymentAsync(Order createdOrder, string? bearerToken)
+        {
+            var paymentPayload = new PaymentIntentRequestDto
+            {
+                Amount = createdOrder.amount
+            };
+            var json = JsonSerializer.Serialize(paymentPayload);
+
+            using var paymentRequest = new HttpRequestMessage(HttpMethod.Post, _paymentEndpoint)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrWhiteSpace(bearerToken))
+            {
+                paymentRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+            }
+
+            try
+            {
+                var response = await _paymentClient.SendAsync(paymentRequest);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Payment service responded with {Status} for order {OrderId}: {Body}",
+                        response.StatusCode, createdOrder.id, body);
+                    return (false, response.StatusCode, body);
+                }
+
+                PaymentIntentResponseDto? paymentResponse = null;
+                try
+                {
+                    paymentResponse = JsonSerializer.Deserialize<PaymentIntentResponseDto>(body, _jsonOptions);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Unable to parse payment service response for order {OrderId}", createdOrder.id);
+                }
+
+                if (paymentResponse != null &&
+                    !string.Equals(paymentResponse.Status, "succeeded", StringComparison.OrdinalIgnoreCase))
+                {
+                    var message = $"Payment status was {paymentResponse.Status ?? "unknown"}.";
+                    _logger.LogWarning("Payment for order {OrderId} returned non-success status: {Status}",
+                        createdOrder.id, paymentResponse.Status);
+                    return (false, HttpStatusCode.BadRequest, message);
+                }
+
+                _logger.LogInformation("Payment succeeded for order {OrderId}", createdOrder.id);
+                return (true, HttpStatusCode.OK, null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Payment service call failed for order {OrderId}", createdOrder.id);
+                return (false, HttpStatusCode.BadGateway, "Payment service unavailable.");
+            }
+        }
+
+        private async Task UpdateOrderStatusAsync(long orderId, string status)
+        {
+            var payload = new { status };
+            var json = JsonSerializer.Serialize(payload);
+
+            using var request = new HttpRequestMessage(HttpMethod.Patch, $"{_ordersEndpoint}?id=eq.{orderId}")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+
+            request.Headers.Add("apikey", _serviceKey);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceKey);
+            request.Headers.Add("Prefer", "return=representation");
+
+            var response = await _http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Failed to update order {OrderId} status to {Status}. StatusCode: {Code}. Body: {Body}",
+                    orderId, status, response.StatusCode, body);
+            }
+            else
+            {
+                _logger.LogInformation("Order {OrderId} status updated to {Status}.", orderId, status);
+            }
+        }
+
+        private async Task ReleaseReservedStockAsync(IEnumerable<(Guid bookId, int quantity)> reservations)
+        {
+            foreach (var (bookId, quantity) in reservations)
+            {
+                try
+                {
+                    var payload = JsonSerializer.Serialize(new { quantity });
+                    var content = new StringContent(payload, Encoding.UTF8, "application/json");
+                    var releaseResp = await _catalogClient.PostAsync($"/api/books/{bookId}/release", content);
+                    var releaseBody = await releaseResp.Content.ReadAsStringAsync();
+                    if (!releaseResp.IsSuccessStatusCode)
+                    {
+                        _logger.LogError("Compensation (release stock) failed for book {BookId}. Status: {Status}. Body: {Body}",
+                            bookId, releaseResp.StatusCode, releaseBody);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Compensation successful: released {Quantity} unit(s) for book {BookId}.",
+                            quantity, bookId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Exception during stock release compensation for book {BookId}.", bookId);
+                }
+            }
+        }
+
+        private static string? ExtractBearerToken(string? header)
+        {
+            if (string.IsNullOrWhiteSpace(header))
+                return null;
+
+            return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? header.Substring(7)
+                : header;
+        }
+
+        private async Task<(bool Success, HttpStatusCode StatusCode, string? Message)> ReserveBookStockAsync(Guid bookId, int quantity)
+        {
+            if (quantity <= 0)
+                return (false, HttpStatusCode.BadRequest, "Quantity must be greater than zero.");
+
+            var payload = JsonSerializer.Serialize(new { quantity });
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+            var response = await _catalogClient.PostAsync($"/api/books/{bookId}/reserve", content);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+                return (true, HttpStatusCode.OK, null);
+
+            return (false, response.StatusCode, body);
+        }
+
+        private static List<OrderItemRequest> NormalizeItems(CreateOrderRequest request)
+        {
+            var items = new List<OrderItemRequest>();
+
+            if (request.items != null && request.items.Count > 0)
+            {
+                foreach (var item in request.items)
+                {
+                    if (item == null)
+                        continue;
+
+                    items.Add(new OrderItemRequest
+                    {
+                        book_id = item.book_id,
+                        quantity = item.quantity <= 0 ? 1 : item.quantity
+                    });
+                }
+            }
+            else if (request.book_id.HasValue && request.book_id != Guid.Empty)
+            {
+                items.Add(new OrderItemRequest
+                {
+                    book_id = request.book_id.Value,
+                    quantity = 1
+                });
+            }
+
+            return items;
         }
 
         [HttpGet]
@@ -47,10 +232,7 @@ namespace OrderService.Controllers
             resp.EnsureSuccessStatusCode();
             var json = await resp.Content.ReadAsStringAsync();
 
-            var orders = JsonSerializer.Deserialize<List<Order>>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var orders = JsonSerializer.Deserialize<List<Order>>(json, _jsonOptions);
 
             return Ok(orders);
         }
@@ -67,10 +249,7 @@ namespace OrderService.Controllers
             resp.EnsureSuccessStatusCode();
             var json = await resp.Content.ReadAsStringAsync();
 
-            var items = JsonSerializer.Deserialize<List<Order>>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var items = JsonSerializer.Deserialize<List<Order>>(json, _jsonOptions);
 
             var order = (items != null && items.Count > 0) ? items[0] : null;
             return order == null ? NotFound() : Ok(order);
@@ -82,8 +261,12 @@ namespace OrderService.Controllers
         [Authorize]
         public async Task<IActionResult> Create([FromBody] CreateOrderRequest request)
         {
-            if (request.book_id == Guid.Empty)
-                return BadRequest("book_id is required.");
+            var normalizedItems = NormalizeItems(request);
+            if (normalizedItems.Count == 0)
+                return BadRequest("Provide at least one book with a quantity.");
+
+            if (normalizedItems.Any(i => i.book_id == Guid.Empty))
+                return BadRequest("Each item must include a valid book_id.");
 
             // Get user id from JWT (Supabase "sub")
             var userIdClaim = User.FindFirst("sub")?.Value;
@@ -95,48 +278,42 @@ namespace OrderService.Controllers
 
             // Forward token to CatalogService
             var authHeader = Request.Headers["Authorization"].FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(authHeader))
+            var bearerToken = ExtractBearerToken(authHeader);
+            if (!string.IsNullOrWhiteSpace(bearerToken))
             {
                 _catalogClient.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer",
-                        authHeader.StartsWith("Bearer ") ? authHeader.Substring(7) : authHeader);
+                    new AuthenticationHeaderValue("Bearer", bearerToken);
             }
 
-            // Saga Step 1: Reserve stock in CatalogService
-            _logger.LogInformation("Starting Saga: reserve stock for book {BookId}", request.book_id);
-
-            var reserveResp = await _catalogClient.PostAsync($"/api/books/{request.book_id}/reserve", null);
-
-            if (reserveResp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            // Saga Step 1: Reserve stock for each item
+            var reservations = new List<(Guid bookId, int quantity)>();
+            foreach (var item in normalizedItems)
             {
-                _logger.LogWarning("Book {BookId} not found in catalog.", request.book_id);
-                return BadRequest($"Book {request.book_id} not found in Catalog.");
+                _logger.LogInformation("Reserving {Quantity} unit(s) for book {BookId}", item.quantity, item.book_id);
+
+                var reserveResult = await ReserveBookStockAsync(item.book_id, item.quantity);
+                if (!reserveResult.Success)
+                {
+                    _logger.LogWarning("Failed to reserve stock for book {BookId}: {Message}", item.book_id, reserveResult.Message);
+                    await ReleaseReservedStockAsync(reservations);
+                    return StatusCode((int)reserveResult.StatusCode,
+                        reserveResult.Message ?? "Unable to reserve stock.");
+                }
+
+                reservations.Add((item.book_id, item.quantity));
             }
 
-            if (reserveResp.StatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                _logger.LogWarning("Out of stock for book {BookId}.", request.book_id);
-                // out of stock, Saga stops here
-                var reason = await reserveResp.Content.ReadAsStringAsync();
-                return BadRequest($"Out of stock: {reason}");
-            }
+            _logger.LogInformation("Stock reserved for {Count} item(s). Proceeding to create order.", normalizedItems.Count);
 
-            if (!reserveResp.IsSuccessStatusCode)
-            {
-                var body = await reserveResp.Content.ReadAsStringAsync();
-                _logger.LogError("Unexpected error reserving stock. Status: {Status}, Body: {Body}",
-                    reserveResp.StatusCode, body);
-                return StatusCode((int)reserveResp.StatusCode, body);
-            }
-
-            _logger.LogInformation("Stock reserved for book {BookId}. Proceeding to create order.", request.book_id);
+            var totalQuantity = normalizedItems.Sum(i => i.quantity);
+            var totalAmount = Math.Round(totalQuantity * 5.00m, 2, MidpointRounding.AwayFromZero);
 
             // Saga Step 2: Insert order into Orders DB (Supabase)
             var insertDto = new InsertOrderDto
             {
                 user_id = userId,
-                book_id = request.book_id,
-                amount = 0.01m,     // 1 cent just for demo
+                book_id = normalizedItems.First().book_id,
+                amount = totalAmount,
                 status = "pending",
                 created_at = DateTime.UtcNow
             };
@@ -158,40 +335,43 @@ namespace OrderService.Controllers
                 _logger.LogError("Order insert failed. Status: {Status}. Body: {Body}. Triggering compensation.",
                     orderResp.StatusCode, orderBody);
 
-                // Saga compensation: release stock in CatalogService
-                try
-                {
-                    var releaseResp = await _catalogClient.PostAsync($"/api/books/{request.book_id}/release", null);
-                    var releaseBody = await releaseResp.Content.ReadAsStringAsync();
-                    if (!releaseResp.IsSuccessStatusCode)
-                    {
-                        _logger.LogError("Compensation (release stock) failed. Status: {Status}. Body: {Body}",
-                            releaseResp.StatusCode, releaseBody);
-                    }
-                    else
-                    {
-                        _logger.LogInformation("Compensation successful: stock released for book {BookId}.", request.book_id);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Exception during stock release compensation for book {BookId}.", request.book_id);
-                }
+                await ReleaseReservedStockAsync(reservations);
 
                 return StatusCode((int)orderResp.StatusCode, orderBody);
             }
 
-            // 6️⃣ Success: deserialize created order from Supabase
-            var createdList = JsonSerializer.Deserialize<List<Order>>(orderBody, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var createdList = JsonSerializer.Deserialize<List<Order>>(orderBody, _jsonOptions);
             var created = createdList!.First();
 
-            _logger.LogInformation("Saga completed successfully. Order {OrderId} created for book {BookId}.",
-                created.id, created.book_id);
+            _logger.LogInformation("Order {OrderId} created. Initiating payment of {Amount:C}.", created.id, totalAmount);
 
-            return CreatedAtAction(nameof(GetById), new { id = created.id }, created);
+            var paymentResult = await ProcessPaymentAsync(created, bearerToken);
+            if (!paymentResult.Success)
+            {
+                _logger.LogWarning("Payment for order {OrderId} failed: {Message}", created.id, paymentResult.Message);
+                await UpdateOrderStatusAsync(created.id, "failed");
+                await ReleaseReservedStockAsync(reservations);
+                return StatusCode((int)paymentResult.StatusCode, paymentResult.Message ?? "Payment failed.");
+            }
+
+            created.status = "successful";
+            created.amount = totalAmount;
+            await UpdateOrderStatusAsync(created.id, created.status);
+
+            var response = new OrderResponse
+            {
+                order = created,
+                items = normalizedItems.Select(i => new OrderItemSummary
+                {
+                    book_id = i.book_id,
+                    quantity = i.quantity
+                }).ToList(),
+                total_amount = totalAmount
+            };
+
+            _logger.LogInformation("Order {OrderId} marked as successful after payment.", created.id);
+
+            return CreatedAtAction(nameof(GetById), new { id = created.id }, response);
         }
     }
 }

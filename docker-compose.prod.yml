@@ -29,6 +29,7 @@ services:
       - Jwt__Issuer=${JWT_ISSUER}
       - Jwt__Audience=${JWT_AUDIENCE}
       - Jwt__Secret=${JWT_SECRET}
+      - PAYMENT_BASE_URL=${PAYMENT_BASE_URL}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]

@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: online-bookstore
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+      - name: api-gateway
+        image: api-gateway:local
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: bookstore-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: DOTNET_RUNNING_IN_CONTAINER
+          valueFrom:
+            configMapKeyRef:
+              name: bookstore-config
+              key: DOTNET_RUNNING_IN_CONTAINER
+        - name: Jwt__Issuer
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: Jwt__Issuer
+        - name: Jwt__Audience
+          valueFrom:
+            secretKeyRef:
+              name: bookstore-secrets
+              key: Jwt__Audience
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: online-bookstore
+spec:
+  selector:
+    app: api-gateway
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    nodePort: 30080
+  type: NodePort

@@ -34,7 +34,7 @@ public class PaymentsController : ControllerBase
             return BadRequest("Amount must be greater than zero.");
         }
 
-        var currency = string.IsNullOrWhiteSpace(request.Currency) ? "usd" : request.Currency.ToLowerInvariant();
+        const string currency = "usd";
         var amountInMinorUnit = ConvertToMinorUnits(request.Amount, currency);
         var userId = User.FindFirst("sub")?.Value ?? "anonymous";
 
@@ -42,33 +42,15 @@ public class PaymentsController : ControllerBase
         {
             Amount = amountInMinorUnit,
             Currency = currency,
-            Description = string.IsNullOrWhiteSpace(request.Description)
-                ? $"Book order {request.OrderId?.ToString() ?? "N/A"}"
-                : request.Description,
-            AutomaticPaymentMethods = new PaymentIntentAutomaticPaymentMethodsOptions
-            {
-                Enabled = true
-            },
+            Description = $"Book order payment ({DateTime.UtcNow:O})",
+            PaymentMethodTypes = new List<string> { "card" },
+            PaymentMethod = "pm_card_visa", // change to pm_card_chargeDeclined for a failed scenario, default pm_card_visa = successful
+            Confirm = true,
             Metadata = new Dictionary<string, string>
             {
                 ["userId"] = userId
             }
         };
-
-        if (request.OrderId.HasValue)
-        {
-            createOptions.Metadata["orderId"] = request.OrderId.Value.ToString();
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.ReceiptEmail))
-        {
-            createOptions.ReceiptEmail = request.ReceiptEmail;
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.StatementDescriptor))
-        {
-            createOptions.StatementDescriptor = request.StatementDescriptor;
-        }
 
         try
         {
@@ -79,18 +61,18 @@ public class PaymentsController : ControllerBase
             {
                 PaymentIntentId = intent.Id,
                 ClientSecret = intent.ClientSecret ?? string.Empty,
-                Amount = intent.Amount ?? amountInMinorUnit,
+                Amount = intent.Amount,
                 Currency = intent.Currency ?? currency,
                 Status = intent.Status,
                 PublishableKey = _stripeOptions.PublishableKey ?? string.Empty
             };
 
-            _logger.LogInformation("Payment intent {IntentId} created for order {OrderId}", intent.Id, request.OrderId);
+            _logger.LogInformation("Payment intent {IntentId} created for user {UserId}", intent.Id, userId);
             return Ok(response);
         }
         catch (StripeException ex)
         {
-            _logger.LogError(ex, "Stripe rejected payment intent for order {OrderId}", request.OrderId);
+            _logger.LogError(ex, "Stripe rejected payment intent for user {UserId}", userId);
             return StatusCode(StatusCodes.Status502BadGateway, new
             {
                 message = ex.StripeError?.Message ?? ex.Message

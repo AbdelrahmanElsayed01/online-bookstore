@@ -96,21 +96,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Configure kubectl (use secret if provided, else existing KUBECONFIG)
-        env:
-          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+      - name: Configure kubectl (force local minikube kubeconfig)
         run: |
-          if [ -n "$KUBE_CONFIG_DATA" ]; then
-            echo "$KUBE_CONFIG_DATA" | base64 -d > kubeconfig
-            echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
-            echo "Using kubeconfig from secret."
-          else
-            if [ -z "$KUBECONFIG" ]; then
-              export KUBECONFIG="$LOCAL_KUBECONFIG"
-              echo "KUBECONFIG=$KUBECONFIG" >> $GITHUB_ENV
-            fi
-            echo "Using local KUBECONFIG on self-hosted runner: $KUBECONFIG"
-          fi
+          # Always flatten the currently running local minikube context
+          kubectl config view --minify --flatten --kubeconfig "$LOCAL_KUBECONFIG" > kubeconfig
+          echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+          echo "Using flattened local kubeconfig: $PWD/kubeconfig"
 
       - name: Verify cluster access
         run: |

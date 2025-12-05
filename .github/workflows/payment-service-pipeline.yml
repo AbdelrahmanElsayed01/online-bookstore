@@ -90,6 +90,8 @@ jobs:
     needs: docker-build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    env:
+      LOCAL_KUBECONFIG: /Users/abdelrahmanelsayed/.kube/config
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -104,11 +106,16 @@ jobs:
             echo "Using kubeconfig from secret."
           else
             if [ -z "$KUBECONFIG" ]; then
-              echo "No KUBE_CONFIG_DATA secret and no KUBECONFIG env set on the runner." >&2
-              exit 1
+              export KUBECONFIG="$LOCAL_KUBECONFIG"
+              echo "KUBECONFIG=$KUBECONFIG" >> $GITHUB_ENV
             fi
-            echo "Using existing KUBECONFIG on self-hosted runner: $KUBECONFIG"
+            echo "Using local KUBECONFIG on self-hosted runner: $KUBECONFIG"
           fi
+
+      - name: Verify cluster access
+        run: |
+          kubectl cluster-info
+          kubectl config current-context
 
       - name: Deploy PaymentService
         env:

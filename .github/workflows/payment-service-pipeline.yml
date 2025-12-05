@@ -91,9 +91,27 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     steps:
-      - name: Deploy PaymentService
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Ensure kubeconfig secret exists
         run: |
-          TARGET_ENV=$([ "${GITHUB_REF##*/}" = "main" ] && echo "production" || echo "staging")
-          echo "Deploying PaymentService to ${TARGET_ENV}..."
-          echo "Image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/payment-service:${{ github.sha }}"
-          echo "Add ${TARGET_ENV} deployment automation here."
+          if [ -z "${{ secrets.KUBE_CONFIG_DATA }}" ]; then
+            echo "KUBE_CONFIG_DATA secret is missing. Add it to enable CD." >&2
+            exit 1
+          fi
+
+      - name: Configure kubectl
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+        run: |
+          echo "$KUBE_CONFIG_DATA" | base64 -d > kubeconfig
+          echo "KUBECONFIG=$PWD/kubeconfig" >> $GITHUB_ENV
+
+      - name: Deploy PaymentService
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/payment-service:${{ github.ref_name }}-${{ github.sha }}
+        run: |
+          kubectl apply -f k8s/payment-service.yaml
+          kubectl set image deployment/payment-service payment-service=$IMAGE -n online-bookstore
+          kubectl rollout status deployment/payment-service -n online-bookstore

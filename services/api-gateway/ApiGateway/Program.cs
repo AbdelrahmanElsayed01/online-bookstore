@@ -9,6 +9,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         options.Authority = builder.Configuration["Jwt:Issuer"];
         options.Audience = builder.Configuration["Jwt:Audience"];
+        // Allow local/dev HTTP authority (Minikube) instead of requiring HTTPS metadata
+        options.RequireHttpsMetadata = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,

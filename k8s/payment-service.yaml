@@ -15,6 +15,8 @@ spec:
       labels:
         app: payment-service
     spec:
+      imagePullSecrets:
+      - name: ghcr-auth
       containers:
       - name: payment-service
         image: payment-service:local

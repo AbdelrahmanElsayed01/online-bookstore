@@ -35,8 +35,8 @@ services:
 
   order-service:
     build:
-      context: ./services
-      dockerfile: OrderService/Dockerfile
+      context: ./services/OrderService
+      dockerfile: Dockerfile
     ports:
       - "5180:8080"
     environment:

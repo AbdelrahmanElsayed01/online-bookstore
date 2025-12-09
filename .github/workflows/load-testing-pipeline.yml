@@ -31,6 +31,24 @@ jobs:
       - name: Create monitoring network
         run: docker network create monitoring || true
 
+      - name: Write .env for docker compose
+        run: |
+          cat <<'EOF' > .env
+          Jwt__Issuer=${{ secrets.JWT_ISSUER }}
+          Jwt__Audience=${{ secrets.JWT_AUDIENCE }}
+          Jwt__Secret=${{ secrets.JWT_SECRET }}
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          ORDERS_SUPABASE_URL=${{ secrets.ORDERS_SUPABASE_URL }}
+          ORDERS_SUPABASE_KEY=${{ secrets.ORDERS_SUPABASE_KEY }}
+          ORDERS_SUPABASE_SERVICE_KEY=${{ secrets.ORDERS_SUPABASE_SERVICE_KEY }}
+          PAYMENT_BASE_URL=${{ secrets.PAYMENT_BASE_URL || 'http://payment-service:8080/' }}
+          STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          EOF
+
       - name: Start services for testing
         run: |
           docker compose up -d

@@ -12,6 +12,7 @@ services:
     environment:
       - Jwt__Issuer=${Jwt__Issuer}
       - Jwt__Audience=${Jwt__Audience}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     networks:
       - monitoring
 
@@ -30,6 +31,7 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     networks:
       - monitoring
 
@@ -49,6 +51,7 @@ services:
       - ORDERS_SUPABASE_KEY=${ORDERS_SUPABASE_KEY}
       - ORDERS_SUPABASE_SERVICE_KEY=${ORDERS_SUPABASE_SERVICE_KEY}
       - PAYMENT_BASE_URL=${PAYMENT_BASE_URL}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     networks:
       - monitoring
 
@@ -67,6 +70,18 @@ services:
       - Stripe__PublishableKey=${STRIPE_PUBLISHABLE_KEY}
       - Stripe__SecretKey=${STRIPE_SECRET_KEY}
       - Stripe__WebhookSecret=${STRIPE_WEBHOOK_SECRET}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    networks:
+      - monitoring
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
     networks:
       - monitoring
 

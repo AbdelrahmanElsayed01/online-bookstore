@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: api-gateway
-        image: api-gateway:local
+        image: abdelrahmanelsayedeg/api-gateway:1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -55,5 +55,4 @@ spec:
   - name: http
     port: 80
     targetPort: 8080
-    nodePort: 30080
-  type: NodePort
+  type: LoadBalancer

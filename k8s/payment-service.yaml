@@ -15,11 +15,9 @@ spec:
       labels:
         app: payment-service
     spec:
-      imagePullSecrets:
-      - name: ghcr-auth
       containers:
       - name: payment-service
-        image: payment-service:local
+        image: abdelrahmanelsayedeg/payment-service:1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

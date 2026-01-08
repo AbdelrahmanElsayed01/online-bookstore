@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: catalog-service
-        image: catalog-service:local
+        image: abdelrahmanelsayedeg/catalog-service:1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

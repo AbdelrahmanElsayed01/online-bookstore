@@ -2,6 +2,8 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,6 +50,20 @@ builder.Services.AddCors(o =>
 
 // HttpClientFactory
 builder.Services.AddHttpClient();
+
+var serviceName = builder.Configuration["OTEL_SERVICE_NAME"] ?? "order-service";
+var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? "http://localhost:4317";
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService(serviceName))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .SetSampler(new AlwaysOnSampler())
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter(options => options.Endpoint = new Uri(otlpEndpoint));
+    });
 
 // JWT env vars
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];

@@ -14,7 +14,9 @@ export const options = {
 };
 
 const BASE_URL = 'http://catalog-service:8080/api/books';
-const TOKEN = 'eyJhbGciOiJIUzI1NiIsImtpZCI6IktFd28vbEFtbDc1dHMrUmciLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2N5ZWNlc2Fndmdnc3htcmZyeXNlLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJkN2ViOWZjYy00Zjg2LTQxNjAtODVhNC04MjUwMmU1YTc4OTgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzYzOTg5MTkyLCJpYXQiOjE3NjM5ODU1OTIsImVtYWlsIjoiYWJkZWxyaG1hbmdhZDE5N0BnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc2Mzk4NTU5Mn1dLCJzZXNzaW9uX2lkIjoiYmM1MGQ3OTQtZDA4Yy00NjRiLWI1MWItYjU2NWRlYzQxNDEwIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.8SVWe2isO_6CyYkYohisfofL2nJylpKWYu-1lJ0r2PE';
+// Supply a valid Supabase JWT at runtime, e.g.:
+//   k6 run -e TOKEN="<your-jwt>" CRUD50VUs-120secs.js
+const TOKEN = __ENV.TOKEN || '';
 
 const HEADERS = {
   Authorization: `Bearer ${TOKEN}`,
